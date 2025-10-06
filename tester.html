@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gruppy: Transparent Cross-Border E-commerce</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-content {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Custom Keyframes for Animation */
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.9; }
+            50% { transform: translateY(-10px) rotate(2deg); opacity: 1; }
+        }
+        @keyframes pulse-once {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .animate-float-slow {
+            animation: float 10s ease-in-out infinite;
+        }
+        .animate-float-medium {
+            animation: float 7s ease-in-out infinite;
+        }
+        .parallax-section {
+            height: 350px;
+            overflow: hidden;
+            position: relative;
+            background-color: #f7f9fc;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        .parallax-item {
+            position: absolute;
+            transition: transform 0.1s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-4">
+
+    <!-- Global Message Box (outside main container for sticky access) -->
+    <div id="messageBox" class="fixed top-2 right-4 z-50 w-full max-w-sm p-3 rounded-lg shadow-xl transition-all duration-300 opacity-0 hidden" role="alert">
+        <p id="messageText" class="font-medium text-sm"></p>
+    </div>
+
+    <div class="w-full max-w-4xl pt-8">
+
+        <!-- Header and Navigation Bar -->
+        <header class="bg-white p-4 rounded-xl shadow-lg flex justify-between items-center mb-8 border border-blue-100 sticky top-4 z-10">
+            <div class="flex items-center space-x-2">
+                <a href="#hero" class="flex items-center">
+                    <i class="fas fa-shipping-fast text-2xl text-blue-600 animate-[pulse-once_1s_ease-out_1]"></i>
+                    <h1 class="text-2xl font-black text-gray-800 tracking-tight ml-2">GRUPPY</h1>
+                </a>
+            </div>
+            
+            <!-- Role Menu (Right Side) -->
+            <div class="relative group">
+                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition duration-150 shadow-md flex items-center">
+                    <i class="fas fa-lock mr-2"></i> Access Portal
+                </button>
+                <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform scale-95 group-hover:scale-100 origin-top-right">
+                    <div class="py-1">
+                        <button onclick="showTab('login', 'consumer')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center"><i class="fas fa-shopping-cart w-4 mr-2 text-blue-500"></i> Consumer Login</button>
+                        <button onclick="showTab('register', 'affiliate')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center"><i class="fas fa-handshake w-4 mr-2 text-green-500"></i> Affiliate Register</button>
+                        <button onclick="showTab('login', 'admin')" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center"><i class="fas fa-user-shield w-4 mr-2 text-red-500"></i> Admin Login</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Value Proposition Hero -->
+        <section id="hero" class="bg-blue-50 p-10 rounded-xl shadow-inner border border-blue-200 mb-12">
+            <div class="text-center">
+                <h2 class="text-4xl md:text-5xl font-extrabold text-blue-800 mb-4">Radical Transparency in Cross-Border Trade.</h2>
+                <p class="text-xl text-gray-700 mb-6">Stop paying for inflated estimates. See your KRA-compliant cost breakdown in real time.</p>
+                <button onclick="showTab('pricing')" class="bg-green-500 text-white text-lg px-8 py-3 rounded-full font-bold shadow-lg hover:bg-green-600 transform hover:scale-105 transition duration-300">
+                    <i class="fas fa-calculator mr-2"></i> Calculate Your Savings
+                </button>
+            </div>
+        </section>
+
+        <!-- Main Content Area - Tabs (Auth/Pricing) -->
+        <div class="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 space-y-8 mb-12">
+            <div id="tabContainer" class="min-h-96">
+                <!-- Tabs will be rendered here -->
+            </div>
+        </div>
+        
+        <!-- Interactive 3D/Parallax Section (Consolidation Moat) -->
+        <section id="consolidation-moat" class="mb-12">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Our Core Innovation: Volume Economics</h2>
+            <p class="text-center text-gray-600 max-w-2xl mx-auto mb-8">We aggregate 50-100 small orders into single, massive shipments, reducing your per-unit cost by 60% compared to fragmented express mail.</p>
+            
+            <div id="parallaxContainer" class="parallax-section shadow-2xl">
+                <!-- Static Background: Container Ship Icon -->
+                <div class="absolute inset-0 flex items-center justify-center text-gray-200 z-0">
+                    <i class="fas fa-ship text-[250px] opacity-50"></i>
+                </div>
+                
+                <!-- Animating Items (Products) -->
+                <!-- Item 1: Headphones (Electronics) -->
+                <div id="item1" class="parallax-item text-4xl p-2 bg-white rounded-lg shadow-lg" style="top: 20%; left: 10%; z-index: 1; animation-delay: 0s;">🎧</div>
+                
+                <!-- Item 2: Trousers (Clothing) -->
+                <div id="item2" class="parallax-item text-4xl p-2 bg-white rounded-lg shadow-lg" style="top: 50%; left: 30%; z-index: 2; animation-delay: 2s;">👖</div>
+                
+                <!-- Item 3: Coffee Maker (Household) -->
+                <div id="item3" class="parallax-item text-4xl p-2 bg-white rounded-lg shadow-lg" style="top: 15%; right: 5%; z-index: 3; animation-delay: 4s;">☕</div>
+                
+                <!-- Item 4: Sneakers (Footwear) -->
+                <div id="item4" class="parallax-item text-4xl p-2 bg-white rounded-lg shadow-lg" style="bottom: 10%; right: 25%; z-index: 1; animation-delay: 6s;">👟</div>
+
+                <!-- Item 5: Box (Consolidation) -->
+                <div id="item5" class="parallax-item text-5xl p-4 bg-yellow-100 rounded-lg shadow-2xl border-4 border-yellow-500" style="bottom: 5%; left: 5%; z-index: 4; animation-delay: 8s;">📦</div>
+
+                <!-- Central Focus: Consolidation Icon -->
+                <div class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                    <div class="p-4 bg-blue-600 text-white rounded-full shadow-2xl transform scale-100 animate-[pulse_2s_infinite_ease-out]">
+                        <i class="fas fa-cubes text-4xl"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Core Principles Section -->
+        <section id="principles" class="mb-12 p-8 bg-white rounded-xl shadow-lg">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">Our Core Principles</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Principle 1: Transparency -->
+                <div class="p-6 rounded-lg border border-gray-200 bg-gray-50 text-center transition duration-300 hover:shadow-lg hover:border-green-300">
+                    <i class="fas fa-glasses text-4xl text-green-500 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Radical Transparency</h3>
+                    <p class="text-gray-600 text-sm">Every shilling is accounted for. We show you the full **KRA-compliant** duty, levy, and handling breakdown, ensuring **no surprise costs** at the port.</p>
+                </div>
+                <!-- Principle 2: Compliance -->
+                <div class="p-6 rounded-lg border border-gray-200 bg-gray-50 text-center transition duration-300 hover:shadow-lg hover:border-blue-300">
+                    <i class="fas fa-balance-scale text-4xl text-blue-500 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Compliance First</h3>
+                    <p class="text-gray-600 text-sm">Our **Groupie Engine** uses up-to-date **HS Codes** and **KRA Tax Rates**. We guarantee 100% regulatory compliance, eliminating customs delays.</p>
+                </div>
+                <!-- Principle 3: Savings -->
+                <div class="p-6 rounded-lg border border-gray-200 bg-gray-50 text-center transition duration-300 hover:shadow-lg hover:border-yellow-300">
+                    <i class="fas fa-tags text-4xl text-yellow-500 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">Guaranteed Savings</h3>
+                    <p class="text-gray-600 text-sm">By leveraging **volume economics**, we ensure you save a minimum of 15% compared to expensive direct shipping methods.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer / Contact Information -->
+        <footer class="bg-gray-800 text-white p-10 rounded-t-xl mt-12">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
+                
+                <!-- Column 1: Gruppy Identity -->
+                <div class="space-y-3">
+                    <a href="#hero" class="text-2xl font-black text-blue-400 tracking-tight flex items-center">
+                        <i class="fas fa-shipping-fast mr-2"></i> GRUPPY
+                    </a>
+                    <p class="text-sm text-gray-400">Transforming cross-border e-commerce for Kenyan consumers.</p>
+                    <p class="text-xs text-gray-500">© 2025 GRUPPY Development Team.</p>
+                </div>
+
+                <!-- Column 2: Quick Links -->
+                <div class="space-y-2">
+                    <h3 class="text-lg font-semibold text-gray-300 mb-2">Company</h3>
+                    <a href="#" onclick="alert('This link will navigate to the About Us page.')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">About Us</a>
+                    <a href="#" onclick="alert('This link will navigate to the Careers page.')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">Careers</a>
+                    <a href="#" onclick="alert('This link will navigate to the Terms of Service.')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">Terms & Privacy</a>
+                </div>
+                
+                <!-- Column 3: Support & Contact -->
+                <div class="space-y-2">
+                    <h3 class="text-lg font-semibold text-gray-300 mb-2">Support</h3>
+                    <p class="text-sm text-gray-400 flex items-center"><i class="fas fa-envelope w-4 mr-2 text-blue-400"></i> support@gruppy.co.ke</p>
+                    <p class="text-sm text-gray-400 flex items-center"><i class="fas fa-phone w-4 mr-2 text-blue-400"></i> +254 7XX XXX XXX</p>
+                    <p class="text-sm text-gray-400 flex items-start"><i class="fas fa-map-marker-alt w-4 mr-2 mt-1 text-blue-400"></i> Nairobi, Kenya</p>
+                </div>
+
+                <!-- Column 4: Admin/Affiliate Links -->
+                <div class="space-y-2">
+                    <h3 class="text-lg font-semibold text-gray-300 mb-2">Portals</h3>
+                    <a href="#" onclick="showTab('login', 'admin')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">Admin Portal (Login)</a>
+                    <a href="#" onclick="showTab('register', 'affiliate')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">Become an Affiliate</a>
+                    <a href="#" onclick="showTab('protected')" class="block text-sm text-gray-400 hover:text-blue-400 transition duration-150">API Test Route</a>
+                </div>
+
+            </div>
+            <div class="text-center text-xs text-gray-600 mt-8">
+                 <p>Backend Status: <code class="font-mono bg-gray-700 px-2 py-1 rounded">http://localhost:3000</code></p>
+            </div>
+        </footer>
+
+
+    </div>
+
+    <!-- Font Awesome for Icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/js/all.min.js"></script>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api'; // Changed to include /api base path
+        const AUTH_URL = API_BASE + '/auth';
+        const PRICING_URL = API_BASE + '/pricing';
+        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key='; 
+        const API_KEY = ''; // Leave blank for Canvas environment
+
+        let currentToken = '';
+        let currentRole = 'consumer';
+        let activeTab = 'pricing';
+
+        const tabContainer = document.getElementById('tabContainer');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+        const parallaxContainer = document.getElementById('parallaxContainer');
+        
+        // --- Utility Functions ---
+        
+        function showMessage(message, type = 'success') {
+            const bgColor = type === 'success' ? 'bg-green-100 border-green-300' : (type === 'error' ? 'bg-red-100 border-red-300' : 'bg-yellow-100 border-yellow-300');
+            const textColor = type === 'success' ? 'text-green-800' : (type === 'error' ? 'text-red-800' : 'text-yellow-800');
+
+            messageBox.className = `p-3 mb-6 rounded-lg shadow-md transition-all duration-300 ${bgColor} ${textColor} border opacity-100 fixed top-4 right-4 z-50`;
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+
+            setTimeout(() => {
+                messageBox.classList.add('opacity-0');
+                setTimeout(() => {
+                    messageBox.classList.add('hidden');
+                }, 300);
+            }, 5000);
+        }
+
+        async function apiCall(fullUrl, method, body = null, token = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                };
+
+                if (token) {
+                    options.headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(fullUrl, options);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || data.message || `Server responded with status ${response.status}`);
+                }
+
+                return data;
+
+            } catch (error) {
+                showMessage(`API Error (${method} ${fullUrl.split(API_BASE)[1] || fullUrl}): ${error.message}`, 'error');
+                return null;
+            }
+        }
+        
+        async function geminiCall(prompt, targetElementId) {
+            const outputElement = document.getElementById(targetElementId);
+            const button = outputElement.closest('.gemini-container').querySelector('button');
+            const originalButtonText = button.innerHTML;
+
+            outputElement.innerHTML = '<div class="flex items-center text-blue-500"><i class="fas fa-spinner fa-spin mr-2"></i> Analyzing...</div>';
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Searching...';
+
+            const systemPrompt = "You are an expert customs assistant. Your task is to look up the Harmonized System (HS) Code for a given product or description based on current world trade data. Return only the HS Code (8-digit or 10-digit if possible) and a brief description. If you cannot find a specific HS Code, advise the user to contact a customs agent.";
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                }
+            };
+            
+            try {
+                const response = await fetch(GEMINI_API_URL + API_KEY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "No specific HS Code found.";
+                
+                outputElement.innerHTML = `<pre class="whitespace-pre-wrap text-sm text-gray-700 p-3 bg-white rounded-md border border-gray-300 shadow-inner">${text}</pre>`;
+
+            } catch (error) {
+                outputElement.innerHTML = `<p class="text-sm text-red-500">LLM service failed to respond. Check console.</p>`;
+                console.error("Gemini API call failed:", error);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = originalButtonText;
+            }
+        }
+
+        // --- Render Functions ---
+
+        function renderForm(type, role = 'consumer') {
+            currentRole = role;
+            const isRegister = type === 'register';
+            const title = isRegister ? `New ${role.toUpperCase()} Registration` : `${role.toUpperCase()} Login`;
+            const endpoint = isRegister ? '/register' : '/login';
+            const actionText = isRegister ? 'Create Account' : 'Sign In';
+            const icon = isRegister ? 'fa-user-plus' : 'fa-sign-in-alt';
+            const buttonColor = isRegister ? 'bg-green-500 hover:bg-green-600' : 'bg-blue-500 hover:bg-blue-600';
+            const actionId = isRegister ? 'formRegister' : 'formLogin';
+            const extraFields = isRegister && role !== 'admin' ? `
+                <div>
+                    <label for="regFirstName" class="block text-sm font-medium text-gray-700">First Name</label>
+                    <input type="text" id="regFirstName" value="John" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="regLastName" class="block text-sm font-medium text-gray-700">Last Name</label>
+                    <input type="text" id="regLastName" value="Doe" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="regPhone" class="block text-sm font-medium text-gray-700">Phone</label>
+                    <input type="tel" id="regPhone" value="+254712345678" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            ` : '';
+            const hint = role === 'admin' ? '<p class="mt-1 text-xs text-red-500">Admin accounts require backend role assignment.</p>' : '';
+            
+            tabContainer.innerHTML = `
+                <div class="tab-content w-full max-w-lg mx-auto">
+                    <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">${title}</h2>
+                    <form id="${actionId}" class="space-y-4">
+                        <input type="hidden" id="authRole" value="${role}">
+                        ${extraFields}
+                        <div>
+                            <label for="${isRegister ? 'regEmail' : 'logEmail'}" class="block text-sm font-medium text-gray-700">Email</label>
+                            <input type="email" id="${isRegister ? 'regEmail' : 'logEmail'}" value="${role === 'admin' ? 'admin@gruppy.co.ke' : 'test@gruppy.com'}" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label for="${isRegister ? 'regPassword' : 'logPassword'}" class="block text-sm font-medium text-gray-700">Password</label>
+                            <input type="password" id="${isRegister ? 'regPassword' : 'logPassword'}" value="mypassword" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            ${hint}
+                        </div>
+                        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${buttonColor} transition duration-150 transform hover:scale-[1.01] shadow-lg">
+                            <i class="fas ${icon} mr-2"></i> ${actionText}
+                        </button>
+                    </form>
+                    ${!isRegister ? `
+                        <p class="mt-6 text-center text-sm text-gray-600">
+                            Need an account? 
+                            <button onclick="showTab('register')" class="font-medium text-blue-600 hover:text-blue-500 transition duration-150">Register Now</button>
+                        </p>
+                    ` : `
+                        <p class="mt-6 text-center text-sm text-gray-600">
+                            Already registered? 
+                            <button onclick="showTab('login')" class="font-medium text-blue-600 hover:text-blue-500 transition duration-150">Log In</button>
+                        </p>
+                    `}
+                    ${currentToken ? `
+                        <div class="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
+                            <p class="text-sm font-semibold text-gray-700">You are already logged in.</p>
+                            <button onclick="showTab('protected')" class="mt-2 text-blue-600 hover:text-blue-500 text-sm font-medium">Go to Test Route</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            attachAuthListeners(isRegister);
+        }
+
+        function renderPricing() {
+            tabContainer.innerHTML = `
+                <div class="tab-content space-y-8">
+                    <h2 class="text-2xl font-bold text-gray-800 text-center">Groupie Engine: Transparent Pricing</h2>
+                    <p class="text-gray-600 text-center">Use the calculator to instantly determine the final KRA-compliant landed cost (KSh) for your imported product and see your guaranteed savings.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- Left Column: Inputs -->
+                        <div class="space-y-4 p-5 bg-gray-50 rounded-xl border border-gray-200">
+                            <h3 class="text-xl font-semibold text-blue-700 flex items-center"><i class="fas fa-boxes mr-2"></i> Product Details</h3>
+                            <form id="formPriceCalc" class="space-y-4">
+                                <div>
+                                    <label for="costUsd" class="block text-sm font-medium text-gray-700">Product Cost (USD)</label>
+                                    <input type="number" id="costUsd" value="45.00" min="1" step="0.01" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label for="weightKg" class="block text-sm font-medium text-gray-700">Weight (KG)</label>
+                                    <input type="number" id="weightKg" value="2.5" min="0.1" step="0.1" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label for="hsCode" class="block text-sm font-medium text-gray-700">HS Code (e.g., 8471.30.00)</label>
+                                    <input type="text" id="hsCode" value="8471.30.00" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <button type="submit" id="btnCalculate" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition duration-150 transform hover:scale-[1.01] shadow-md">
+                                    <i class="fas fa-rocket mr-2"></i> Calculate Final Landed Cost
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <!-- Right Column: HS Code Lookup (LLM Feature) & Output -->
+                        <div class="space-y-4">
+                            <h3 class="text-xl font-semibold text-gray-700 flex items-center"><i class="fas fa-search mr-2"></i> HS Code Lookup Assistant</h3>
+                            <div class="gemini-container space-y-3 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                                <p class="text-sm text-gray-600">Unsure of your HS code? Ask the AI customs assistant to look it up.</p>
+                                <textarea id="hsLookupPrompt" placeholder="Describe your product (e.g., 'Wireless noise-canceling headphones')" rows="2" class="w-full p-2 border border-gray-300 rounded-md shadow-sm"></textarea>
+                                <button id="btnLookupHs" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 transition duration-150">
+                                    <i class="fas fa-robot mr-2"></i> Find HS Code
+                                </button>
+                                <div id="hsLookupOutput" class="mt-3 text-xs text-gray-700"></div>
+                            </div>
+                            
+                            <h3 class="text-xl font-semibold text-gray-700 flex items-center pt-4"><i class="fas fa-chart-bar mr-2"></i> Results & Savings</h3>
+                            <div id="pricingOutput" class="p-4 bg-green-50 rounded-xl border border-green-200 min-h-[120px]">
+                                <p class="text-sm text-gray-600 text-center py-8">Enter details and click 'Calculate' to see the full breakdown here.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            attachPricingListeners();
+        }
+
+        function renderProtected() {
+            tabContainer.innerHTML = `
+                <div class="tab-content">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center">Protected Route Test: <code class="text-sm text-red-500">GET /auth/me</code></h2>
+                    <p class="text-center text-sm text-gray-600 mb-6">Tests the token obtained during the login process against your running backend.</p>
+                    <div class="w-full max-w-md mx-auto space-y-4">
+                        <button id="btnTestProtected" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition duration-150">
+                            <i class="fas fa-lock mr-2"></i> Test Access with Current Token
+                        </button>
+                        <div class="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                            <p class="text-sm font-medium text-gray-700 mb-2">Protected Response:</p>
+                            <pre id="protectedResponse" class="w-full p-2 text-xs font-mono bg-white border border-gray-300 rounded-md overflow-x-auto">Waiting for test...</pre>
+                        </div>
+                         <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <p class="text-sm font-medium text-gray-700 mb-2">Current Stored Token:</p>
+                            <textarea id="jwtTokenOutput" readonly rows="3" class="w-full p-2 text-xs font-mono bg-white border border-gray-300 rounded-md cursor-pointer resize-none" placeholder="JWT will appear here after successful login. Click to copy.">${currentToken}</textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            attachProtectedListeners();
+        }
+        
+        // --- Listener Setup ---
+
+        function attachAuthListeners(isRegister) {
+            const formId = isRegister ? 'formRegister' : 'formLogin';
+            const form = document.getElementById(formId);
+            if (form) {
+                form.addEventListener('submit', isRegister ? handleRegistration : handleLogin);
+            }
+        }
+        
+        function attachPricingListeners() {
+            document.getElementById('formPriceCalc').addEventListener('submit', handlePriceCalculation);
+            document.getElementById('btnLookupHs').addEventListener('click', handleHsLookup);
+        }
+        
+        function attachProtectedListeners() {
+             document.getElementById('btnTestProtected').addEventListener('click', handleTestProtected);
+             document.getElementById('jwtTokenOutput').addEventListener('click', handleTokenCopy);
+        }
+
+
+        // --- Handler Logic ---
+
+        async function handleRegistration(e) {
+            e.preventDefault();
+            const role = document.getElementById('authRole').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            
+            // Collect other fields only if not admin
+            const body = { 
+                email, 
+                password,
+                role
+            };
+
+            if (role !== 'admin') {
+                 body.firstName = document.getElementById('regFirstName').value;
+                 body.lastName = document.getElementById('regLastName').value;
+                 body.phone = document.getElementById('regPhone').value;
+            }
+
+            const data = await apiCall(AUTH_URL + '/register', 'POST', body);
+
+            if (data) {
+                currentToken = data.data.token;
+                showMessage(`${data.data.role.toUpperCase()} Registration successful! Token obtained.`, 'success');
+                showTab('protected');
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('logEmail').value;
+            const password = document.getElementById('logPassword').value;
+
+            const data = await apiCall(AUTH_URL + '/login', 'POST', { email, password });
+
+            if (data && data.data.token) {
+                currentToken = data.data.token;
+                showMessage(`Login successful! Role: ${data.data.user.role.toUpperCase()}`, 'success');
+                showTab('protected');
+            }
+        }
+        
+        async function handleTestProtected() {
+            if (!currentToken) {
+                protectedResponse.textContent = 'ERROR: No token found. Please log in first.';
+                showMessage('Token is missing. Cannot test protected route.', 'error');
+                return;
+            }
+            protectedResponse.textContent = 'Sending request...';
+
+            // NOTE: The backend endpoint is /auth/me, not /api/auth/me
+            const data = await apiCall(AUTH_URL + '/me', 'GET', null, currentToken);
+
+            if (data) {
+                protectedResponse.textContent = JSON.stringify(data, null, 2);
+                showMessage('Protected route success! User data retrieved.', 'success');
+            } else {
+                protectedResponse.textContent = 'Access Failed. See API Error above.';
+            }
+        }
+        
+        async function handlePriceCalculation(e) {
+             e.preventDefault();
+             const costUsd = parseFloat(document.getElementById('costUsd').value);
+             const weightKg = parseFloat(document.getElementById('weightKg').value);
+             const hsCode = document.getElementById('hsCode').value;
+             
+             if (isNaN(costUsd) || isNaN(weightKg) || !hsCode) {
+                 showMessage('Please enter valid Cost, Weight, and HS Code.', 'error');
+                 return;
+             }
+             
+             const btn = document.getElementById('btnCalculate');
+             btn.disabled = true;
+             btn.innerHTML = '<i class="fas fa-sync-alt fa-spin mr-2"></i> Calculating...';
+
+             document.getElementById('pricingOutput').innerHTML = '<div class="text-center py-8 text-blue-500"><i class="fas fa-spinner fa-pulse text-xl"></i> Loading Breakdown...</div>';
+
+             const data = await apiCall(PRICING_URL + '/calculate', 'POST', {
+                 productCostUSD: costUsd,
+                 weightKg: weightKg,
+                 hsCode: hsCode,
+                 quantity: 1 
+             }, currentToken); // Token is optional per blueprint
+
+             btn.disabled = false;
+             btn.innerHTML = '<i class="fas fa-rocket mr-2"></i> Calculate Final Landed Cost';
+
+             if (data && data.data) {
+                 const p = data.data.pricing;
+                 const s = data.data.savings;
+                 const c = data.data.costs;
+                 const t = data.data.taxes;
+
+                 document.getElementById('pricingOutput').innerHTML = `
+                     <div class="space-y-4">
+                         <div class="text-center p-3 bg-green-200 rounded-lg">
+                             <p class="text-xl font-bold text-green-800">FINAL LANDED PRICE (KSh)</p>
+                             <p class="text-4xl font-extrabold text-green-800">${p.finalPriceKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })}</p>
+                         </div>
+                         <div class="text-center p-2 bg-blue-100 rounded-lg">
+                             <p class="text-sm font-semibold text-blue-800">You Save: ${s.savingsPercent}% (Approx ${s.savingsKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })})</p>
+                         </div>
+                         <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                            <p class="font-medium">CIF Value:</p> <p class="text-right">${c.cifKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })}</p>
+                            <p class="font-medium">Total KRA Taxes:</p> <p class="text-right">${t.totalTaxesKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })}</p>
+                            <p class="font-medium">Local Handling:</p> <p class="text-right">${p.localHandlingKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })}</p>
+                            <p class="font-medium">Groupie Profit (15%):</p> <p class="text-right">${p.profitAmountKSH.toLocaleString('en-KE', { style: 'currency', currency: 'KSH' })}</p>
+                         </div>
+                     </div>
+                 `;
+                 showMessage('Calculation successful! Breakdown displayed.', 'success');
+             } else {
+                 document.getElementById('pricingOutput').innerHTML = '<p class="text-sm text-red-500 text-center py-4">Calculation failed. Check server logs or inputs.</p>';
+             }
+        }
+        
+        async function handleHsLookup() {
+            const prompt = document.getElementById('hsLookupPrompt').value;
+            if (!prompt) {
+                showMessage("Please describe a product first.", 'error');
+                return;
+            }
+            await geminiCall(`What is the HS code for: ${prompt}. Only provide the code and a brief description.`, 'hsLookupOutput');
+        }
+
+        function handleTokenCopy() {
+            const output = document.getElementById('jwtTokenOutput');
+            if (output.value) {
+                output.select();
+                document.execCommand('copy');
+                showMessage('JWT Token copied to clipboard!', 'success');
+            }
+        }
+
+        // --- Initialization ---
+
+        function showTab(tabName, role = null) {
+            activeTab = tabName;
+            if (role) currentRole = role;
+
+            if (tabName === 'register' || tabName === 'login') {
+                renderForm(tabName, role || currentRole);
+            } else if (tabName === 'pricing') {
+                renderPricing();
+            } else if (tabName === 'protected') {
+                 renderProtected();
+            } else {
+                renderPricing(); // Default to Pricing
+            }
+        }
+
+        // Parallax Effect for the Consolidation Section
+        function setupParallax() {
+            const items = [
+                { id: 'item1', depth: 0.15 },
+                { id: 'item2', depth: 0.25 },
+                { id: 'item3', depth: 0.35 },
+                { id: 'item4', depth: 0.20 },
+                { id: 'item5', depth: 0.45 }
+            ];
+
+            const parallaxElements = items.map(item => ({
+                element: document.getElementById(item.id),
+                depth: item.depth
+            }));
+
+            if (parallaxContainer) {
+                parallaxContainer.addEventListener('mousemove', (e) => {
+                    const rect = parallaxContainer.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    const mouseX = e.clientX;
+                    const mouseY = e.clientY;
+
+                    const offsetX = (mouseX - centerX) / 50; // Smaller divisor means greater movement
+                    const offsetY = (mouseY - centerY) / 50;
+
+                    parallaxElements.forEach(item => {
+                        if (item.element) {
+                            const translateZ = 1 - item.depth;
+                            const tx = offsetX * item.depth * 5;
+                            const ty = offsetY * item.depth * 5;
+                            
+                            // Use transform for 3D effect
+                            item.element.style.transform = `translate(${tx}px, ${ty}px) scale(${translateZ * 0.2 + 0.8})`;
+                        }
+                    });
+                });
+            }
+        }
+        
+        // Apply float animation classes for continuous movement
+        function applyFloatAnimations() {
+            document.getElementById('item1').classList.add('animate-float-slow');
+            document.getElementById('item2').classList.add('animate-float-medium');
+            document.getElementById('item3').classList.add('animate-float-slow');
+            document.getElementById('item4').classList.add('animate-float-medium');
+            document.getElementById('item5').classList.add('animate-float-slow');
+        }
+
+
+        
+        // Initial load
+        window.onload = () => {
+            showTab('pricing');
+            setupParallax();
+            applyFloatAnimations();
+        };
+    </script>
+</body>
+</html>
