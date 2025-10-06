@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create an Account - Gruppy</title>
+    <link rel="stylesheet" href="auth-style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="auth-container">
+        <div class="auth-form-wrapper">
+            <a href="index.html" class="logo">Gruppy</a>
+            <div class="auth-form">
+                <h1 class="auth-title">Create Your Account</h1>
+                <p class="auth-subtitle">Join the community and start saving today.</p>
+                
+                <form id="signup-form">
+                    <div class="input-group">
+                        <label for="fullname">Full Name</label>
+                        <input type="text" id="fullname" name="fullname" placeholder="e.g., Alex Chen" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" name="email" placeholder="you@example.com" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="password">Create Password</label>
+                        <input type="password" id="password" name="password" placeholder="Minimum 8 characters" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+                </form>
+
+                <!-- Message area for feedback -->
+                <p id="feedback-message" class="feedback"></p>
+
+                <div class="auth-switch">
+                    <p>Already have an account? <a href="login.html">Log In</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const signupForm = document.getElementById('signup-form');
+        const feedbackMessage = document.getElementById('feedback-message');
+
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Clear previous feedback
+            feedbackMessage.textContent = '';
+            feedbackMessage.style.color = 'var(--text-color)';
+
+            // Get user info from the form
+            const fullName = signupForm.fullname.value;
+            const email = signupForm.email.value;
+            const password = signupForm.password.value;
+
+            // --- This is where the call to your backend happens ---
+            // It's structured to be easily replaced with any service.
+            try {
+                // We are sending the form data to a backend endpoint.
+                // This URL '/api/signup' is a placeholder for your server's API.
+                const response = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fullName: fullName,
+                        email: email,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    // If the server responds with an error (e.g., email already exists)
+                    throw new Error(data.message || 'Something went wrong');
+                }
+
+                // --- Handle Success ---
+                feedbackMessage.textContent = 'Account created successfully! Redirecting...';
+                feedbackMessage.style.color = 'var(--accent-color)';
+                setTimeout(() => {
+                    // Redirect to the dashboard or login page after success
+                    window.location.href = 'dashboard.html'; 
+                }, 2000);
+
+            } catch (error) {
+                // --- Handle Failure ---
+                feedbackMessage.textContent = error.message;
+                feedbackMessage.style.color = 'var(--error-color)';
+            }
+        });
+    </script>
+
+</body>
+</html>
+

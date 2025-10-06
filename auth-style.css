@@ -1,0 +1,193 @@
+/* --- Global Styles & Variables --- */
+:root {
+    --primary-color: #2c5c3b; /* Deep, earthy green from the image */
+    --secondary-color: #5a8f9e; /* Muted slate blue from the sky/mountains */
+    --text-color: #e0e0e0;
+    --accent-color: #a8d08d; /* Lighter green for accents */
+    --error-color: #ff6b6b;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    color: var(--text-color);
+    line-height: 1.6;
+    /* --- GLOBAL BACKGROUND IMAGE (SAME AS LANDING PAGE) --- */
+    background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('images/landing page background.PNG');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+/* --- Auth Page Container --- */
+.auth-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.auth-form-wrapper {
+    max-width: 450px;
+    width: 100%;
+    text-align: center;
+}
+
+.logo {
+    display: inline-block;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.7);
+    margin-bottom: 2rem;
+    transition: color 0.3s ease;
+}
+.logo:hover {
+    color: var(--accent-color);
+}
+
+/* --- Glassmorphism Form --- */
+.auth-form {
+    background-color: rgba(30, 30, 30, 0.75);
+    backdrop-filter: blur(12px);
+    padding: 3rem;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: left;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.auth-title {
+    font-size: 2rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.auth-subtitle {
+    font-size: 1rem;
+    color: var(--text-color);
+    margin-bottom: 2rem;
+}
+
+/* --- Form Elements --- */
+.input-group {
+    margin-bottom: 1.5rem;
+}
+
+.input-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--accent-color);
+}
+
+.input-group input {
+    width: 100%;
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background-color: rgba(18, 18, 18, 0.5);
+    color: #fff;
+    font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(44, 92, 59, 0.5);
+}
+
+.input-group input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.form-options {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1.5rem;
+}
+
+.forgot-password {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.3s ease;
+}
+.forgot-password:hover {
+    text-decoration: underline;
+    color: #fff;
+}
+
+/* --- Buttons --- */
+.btn {
+    padding: 0.7rem 1.5rem;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    width: 100%;
+    font-size: 1.1rem;
+}
+
+.btn-primary {
+    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+.btn-primary:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 6px 20px rgba(44, 92, 59, 0.4);
+}
+
+/* --- Bottom Link to Switch Auth --- */
+.auth-switch {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.auth-switch p {
+    color: var(--text-color);
+}
+
+.auth-switch a {
+    color: var(--accent-color);
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+.auth-switch a:hover {
+    text-decoration: underline;
+    color: #fff;
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 480px) {
+    body {
+        align-items: flex-start;
+        padding-top: 5vh;
+    }
+    .auth-form {
+        padding: 2rem;
+    }
+    .auth-title {
+        font-size: 1.8rem;
+    }
+}
