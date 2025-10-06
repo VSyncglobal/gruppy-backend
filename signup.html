@@ -54,27 +54,23 @@
         signupForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Clear previous feedback
             feedbackMessage.textContent = '';
-            feedbackMessage.style.color = 'var(--text-color)';
-
+            
             // Get user info from the form
             const fullName = signupForm.fullname.value;
             const email = signupForm.email.value;
             const password = signupForm.password.value;
 
-            // --- This is where the call to your backend happens ---
-            // It's structured to be easily replaced with any service.
             try {
-                // We are sending the form data to a backend endpoint.
-                // This URL '/api/signup' is a placeholder for your server's API.
-                const response = await fetch('/api/signup', {
+                // ALIGNED: Point to the backend's register endpoint
+                const response = await fetch('http://localhost:3000/auth/register', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        fullName: fullName,
+                        // ALIGNED: Send 'name' instead of 'fullName' to match the backend
+                        name: fullName, 
                         email: email,
                         password: password
                     })
@@ -83,16 +79,16 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    // If the server responds with an error (e.g., email already exists)
-                    throw new Error(data.message || 'Something went wrong');
+                    // Use the error message from your backend
+                    throw new Error(data.error || 'Something went wrong');
                 }
 
                 // --- Handle Success ---
-                feedbackMessage.textContent = 'Account created successfully! Redirecting...';
+                feedbackMessage.textContent = 'Account created! Redirecting to login...';
                 feedbackMessage.style.color = 'var(--accent-color)';
                 setTimeout(() => {
-                    // Redirect to the dashboard or login page after success
-                    window.location.href = 'dashboard.html'; 
+                    // ALIGNED: Redirect to the login page after successful registration
+                    window.location.href = 'login.html'; 
                 }, 2000);
 
             } catch (error) {
