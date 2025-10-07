@@ -1,0 +1,19 @@
+### LOGIN
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "samwel@example.com",
+  "password": "mypassword"
+}
+
+### PRICING CALCULATION
+POST http://localhost:3000/api/pricing/calculate
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "basePrice": 1000,
+  "distanceKm": 50,
+  "weightKg": 10
+}

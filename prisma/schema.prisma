@@ -17,6 +17,10 @@ model User {
   updatedAt DateTime   @updatedAt
   orders    Order[]
   affiliate Affiliate?
+
+  // 👇 Relations
+  pricingLogs   PricingLog[]          @relation("UserPricingLogs")
+  priceCalcLogs PriceCalculationLog[] @relation("UserPriceCalcLogs") // ✅ added name here
 }
 
 model Affiliate {
@@ -42,6 +46,30 @@ model FreightRate {
   country   String
   ratePerKg Float
   createdAt DateTime @default(now())
+}
+
+model PricingLog {
+  id         String   @id @default(cuid())
+  basePrice  Float
+  distanceKm Float
+  weightKg   Float
+  finalPrice Float
+  userId     String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation("UserPricingLogs", fields: [userId], references: [id])
+}
+
+model PriceCalculationLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  basePrice  Float
+  distanceKm Float
+  weightKg   Float
+  total      Float
+  createdAt  DateTime @default(now())
+
+  // ✅ Give this relation its own name
+  user User? @relation("UserPriceCalcLogs", fields: [userId], references: [id])
 }
 
 model KRARate {

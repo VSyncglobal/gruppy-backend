@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Gruppy Dashboard</title>
+    <link rel="stylesheet" href="dashboard-style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+    <!-- Gatekeeper Script: This runs first to protect the page -->
+    <script>
+        (function() {
+            const token = localStorage.getItem('gruppyAuthToken');
+            if (!token) {
+                // If no token is found, immediately redirect to the login page.
+                window.location.replace('./login.html');
+            }
+        })();
+    </script>
+
+    <!-- Page Content (initially hidden) -->
+    <div class="dashboard-container" style="display: none;">
+        <header class="dashboard-header">
+            <a href="index.html" class="logo">Gruppy</a>
+            <button id="logout-button" class="btn btn-secondary">
+                <i class="fas fa-sign-out-alt"></i> Log Out
+            </button>
+        </header>
+
+        <main class="dashboard-content">
+            <h1 id="welcome-message">Loading your dashboard...</h1>
+            <p class="dashboard-subtitle">Manage your profile and track your shipments all in one place.</p>
+            
+            <div class="dashboard-grid">
+                <!-- Profile Card -->
+                <div class="card profile-card">
+                    <div class="card-header">
+                        <i class="fas fa-user-circle"></i>
+                        <h2>My Profile</h2>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Name:</strong> <span id="user-name">...</span></p>
+                        <p><strong>Email:</strong> <span id="user-email">...</span></p>
+                        <p><strong>Role:</strong> <span id="user-role">...</span></p>
+                    </div>
+                </div>
+
+                <!-- Orders Card -->
+                <div class="card orders-card">
+                    <div class="card-header">
+                        <i class="fas fa-box-open"></i>
+                        <h2>My Shipments</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="orders-placeholder" class="placeholder-content">
+                            <p>You have no active shipments.</p>
+                            <button class="btn btn-primary">Start a New Shipment</button>
+                        </div>
+                        <!-- Order list would be rendered here in the future -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const welcomeMessage = document.getElementById('welcome-message');
+        const userName = document.getElementById('user-name');
+        const userEmail = document.getElementById('user-email');
+        const userRole = document.getElementById('user-role');
+        const logoutButton = document.getElementById('logout-button');
+        const dashboardContainer = document.querySelector('.dashboard-container');
+
+        async function fetchUserData() {
+            const token = localStorage.getItem('gruppyAuthToken');
+
+            // If token is somehow missing again, redirect
+            if (!token) {
+                window.location.replace('./login.html');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3000/auth/me', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Session expired. Please log in again.');
+                }
+                
+                // Populate the UI with user data
+                const user = data.user;
+                welcomeMessage.textContent = `Welcome back, ${user.name || 'User'}!`;
+                userName.textContent = user.name;
+                userEmail.textContent = user.email;
+                userRole.textContent = user.role;
+
+                // Show the dashboard now that data is loaded
+                dashboardContainer.style.display = 'block';
+
+            } catch (error) {
+                // If token is invalid/expired, clear it and force re-login
+                localStorage.removeItem('gruppyAuthToken');
+                console.error(error.message); // Log error instead of using alert
+                window.location.replace('./login.html');
+            }
+        }
+
+        logoutButton.addEventListener('click', () => {
+            localStorage.removeItem('gruppyAuthToken');
+            window.location.href = './index.html'; // Go to landing page on logout
+        });
+
+        // Fetch user data as soon as the page is ready
+        document.addEventListener('DOMContentLoaded', fetchUserData);
+    </script>
+
+</body>
+</html>
+

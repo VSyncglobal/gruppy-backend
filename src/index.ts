@@ -6,6 +6,11 @@ import rateLimit from "express-rate-limit";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
 import authRouter from "./routes/auth";
+import pricingRoutes from "./routes/pricing";
+import pricingLogRoutes from "./routes/pricingLog";
+import adminFreightRoutes from "./routes/adminFreight";
+import adminTaxRoutes from "./routes/adminTax";
+
 
 
 import healthRouter from "./routes/health";
@@ -19,6 +24,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
+app.use(express.json());
 
 // Rate limiting (100 requests/min)
 const limiter = rateLimit({
@@ -36,7 +42,10 @@ const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 // Routes
 app.use("/health", healthRouter);
 app.use("/auth", authRouter);
-
+app.use("/api/pricing", pricingRoutes);
+app.use("/api/pricing/logs", pricingLogRoutes);
+app.use("/api/admin/freight", adminFreightRoutes);
+app.use("/api/admin/tax", adminTaxRoutes);
 
 // Root route
 app.get("/", (req: Request, res: Response) => {
