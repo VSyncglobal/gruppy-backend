@@ -43,7 +43,7 @@ export async function calculatePrice({
       basePrice,
       distanceKm,
       weightKg,
-      total,
+      finalPrice: total,
       userId,
     },
   });
