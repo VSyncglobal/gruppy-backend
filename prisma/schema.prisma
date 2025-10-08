@@ -7,20 +7,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String     @id @default(cuid())
-  name      String
-  email     String     @unique
-  password  String
-  role      UserRole   @default(CONSUMER)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  orders    Order[]
-  affiliate Affiliate?
+//////////////////////
+// ENUMS
+//////////////////////
 
-  // 👇 Relations
-  pricingLogs   PricingLog[]          @relation("UserPricingLogs")
-  priceCalcLogs PriceCalculationLog[] @relation("UserPriceCalcLogs") // ✅ added name here
+enum UserRole {
+  ADMIN
+  AFFILIATE
+  CONSUMER
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAYMENT_CONFIRMED
+  SOURCING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+//////////////////////
+// MODELS
+//////////////////////
+
+model User {
+  id               String                   @id @default(cuid())
+  name             String
+  email            String                   @unique
+  password_hash    String
+  role             UserRole                 @default(CONSUMER)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  // relations
+  orders           Order[]
+  affiliate        Affiliate?
+  pricingLogs      PriceCalculationLog[]    @relation("UserPriceCalcLogs")
+  pricingRequests  PricingRequest[]         // future: track interactive requests
+  refreshTokens    RefreshToken[]           // store refresh tokens if you choose DB method
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Affiliate {
@@ -29,7 +69,8 @@ model Affiliate {
   code           String   @unique
   commissionRate Float    @default(0.05)
   createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Product {
@@ -43,12 +84,116 @@ model Product {
 
 model FreightRate {
   id        String   @id @default(cuid())
-  country   String
+  route     String   // e.g. "China-Mombasa Sea"
   ratePerKg Float
   createdAt DateTime @default(now())
+
+  @@unique([route])
 }
 
+model KRARate {
+  id            String    @id @default(cuid())
+  hsCode        String
+  duty_rate     Float      @default(0)    // import duty
+  rdl_rate      Float      @default(0)    // Railway Development Levy or similar
+  idf_rate      Float      @default(0)    // Infrastructure Development Fee
+  vat_rate      Float      @default(0)    // VAT
+  description   String?                 // human readable notes
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([hsCode, effectiveFrom])
+  @@index([hsCode])
+}
+
+model PriceCalculationLog {
+  id            String   @id @default(cuid())
+  userId        String?
+  basePrice     Float
+  distanceKm    Float
+  weightKg      Float
+  route         String?   // route used for lookup
+  hsCode        String?   // hsCode used for lookup
+  freightRate   Float?    // snapshot of ratePerKg used
+  duty_rate     Float?    // snapshot of applied duty
+  rdl_rate      Float?
+  idf_rate      Float?
+  vat_rate      Float?
+  taxesTotal    Float?
+  commission    Float?
+  finalPrice    Float
+  createdAt     DateTime @default(now())
+
+  user User? @relation("UserPriceCalcLogs", fields: [userId], references: [id])
+  @@index([userId])
+  @@index([hsCode])
+  @@index([route])
+}
+
+model PricingRequest {
+  // optional: store interactive requests (for analytics / debug)
+  id         String   @id @default(cuid())
+  userId     String?
+  payload    Json
+  result     Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id                String               @id @default(cuid())
+  order_number      String               @unique
+  userId            String
+  productId         String
+  status            OrderStatus          @default(PENDING_PAYMENT)
+  final_price_ksh   Float?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  user              User                 @relation(fields: [userId], references: [id])
+  product           Product              @relation(fields: [productId], references: [id])
+  payments          Payment[]
+  statusHistory     OrderStatusHistory[]
+
+  @@index([userId])
+  @@index([order_number])
+}
+
+model OrderStatusHistory {
+  id         String     @id @default(cuid())
+  orderId    String
+  fromStatus OrderStatus
+  toStatus   OrderStatus
+  note       String?
+  createdAt  DateTime   @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+  @@index([orderId])
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  orderId            String
+  amount             Float
+  status             PaymentStatus @default(PENDING)
+  method             String
+  mpesa_receipt_number String?      // for M-Pesa receipts
+  transaction_date   DateTime?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+  @@index([orderId])
+}
+
+//////////////////////
+// Legacy / utility (optional)
+//////////////////////
+
 model PricingLog {
+  // keep if used elsewhere; otherwise optional
   id         String   @id @default(cuid())
   basePrice  Float
   distanceKm Float
@@ -56,81 +201,9 @@ model PricingLog {
   finalPrice Float
   userId     String?
   createdAt  DateTime @default(now())
-  user       User?    @relation("UserPricingLogs", fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
 }
 
-model PriceCalculationLog {
-  id         String   @id @default(cuid())
-  userId     String?
-  basePrice  Float
-  distanceKm Float
-  weightKg   Float
-  total      Float
-  createdAt  DateTime @default(now())
-
-  // ✅ Give this relation its own name
-  user User? @relation("UserPriceCalcLogs", fields: [userId], references: [id])
-}
-
-model KRARate {
-  id            String    @id @default(cuid())
-  hsCode        String
-  taxRate       Float
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  createdAt     DateTime  @default(now())
-}
-
-model Order {
-  id              String            @id @default(cuid())
-  userId          String
-  productId       String
-  status          OrderStatus       @default(PENDING)
-  totalCost       Float
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  user            User              @relation(fields: [userId], references: [id])
-  product         Product           @relation(fields: [productId], references: [id])
-  Payment         Payment?
-  CostCalculation CostCalculation[]
-}
-
-model Payment {
-  id        String        @id @default(cuid())
-  orderId   String        @unique
-  amount    Float
-  status    PaymentStatus @default(PENDING)
-  method    String
-  createdAt DateTime      @default(now())
-
-  order Order @relation(fields: [orderId], references: [id])
-}
-
-model CostCalculation {
-  id        String   @id @default(cuid())
-  orderId   String
-  breakdown Json
-  createdAt DateTime @default(now())
-
-  order Order @relation(fields: [orderId], references: [id])
-}
-
-enum UserRole {
-  ADMIN
-  AFFILIATE
-  CONSUMER
-}
-
-enum OrderStatus {
-  PENDING
-  PAID
-  SHIPPED
-  DELIVERED
-  CANCELLED
-}
-
-enum PaymentStatus {
-  PENDING
-  SUCCESS
-  FAILED
-}
+//////////////////////
+// END
+//////////////////////

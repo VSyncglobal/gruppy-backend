@@ -8,123 +8,218 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
 
-    <!-- Gatekeeper Script: This runs first to protect the page -->
     <script>
         (function() {
             const token = localStorage.getItem('gruppyAuthToken');
             if (!token) {
-                // If no token is found, immediately redirect to the login page.
                 window.location.replace('./login.html');
             }
         })();
     </script>
 
-    <!-- Page Content (initially hidden) -->
-    <div class="dashboard-container" style="display: none;">
-        <header class="dashboard-header">
-            <a href="index.html" class="logo">Gruppy</a>
-            <button id="logout-button" class="btn btn-secondary">
-                <i class="fas fa-sign-out-alt"></i> Log Out
-            </button>
-        </header>
+    <div class="app-layout">
+        <!-- Side Navigation Menu -->
+        <aside class="sidebar">
+            <div>
+                <a href="index.html" class="logo">Gruppy</a>
+                <nav class="main-nav">
+                    <ul>
+                        <li><a href="#dashboard" class="nav-link active"><i class="fas fa-tachometer-alt"></i><span>Dashboard</span></a></li>
+                        <li><a href="#pools" class="nav-link"><i class="fas fa-users"></i><span>Active Pools</span></a></li>
+                        <li><a href="#orders" class="nav-link"><i class="fas fa-box-open"></i><span>My Orders</span></a></li>
+                        <li><a href="#knowledge" class="nav-link"><i class="fas fa-book"></i><span>Knowledge Base</span></a></li>
+                    </ul>
+                </nav>
+            </div>
+            <div class="profile-section">
+                <div class="profile-info">
+                    <span id="user-name-sidebar">...</span>
+                    <span id="user-email-sidebar">...</span>
+                </div>
+                <button id="logout-button" class="logout-btn" title="Log Out">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </aside>
 
-        <main class="dashboard-content">
-            <h1 id="welcome-message">Loading your dashboard...</h1>
-            <p class="dashboard-subtitle">Manage your profile and track your shipments all in one place.</p>
-            
-            <div class="dashboard-grid">
-                <!-- Profile Card -->
-                <div class="card profile-card">
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dashboard/Calculator Pane -->
+            <div id="dashboard" class="content-pane active">
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle">Calculate shipping costs and create a new pool.</p>
+                <div class="card calculator-card">
                     <div class="card-header">
-                        <i class="fas fa-user-circle"></i>
-                        <h2>My Profile</h2>
+                        <i class="fas fa-calculator"></i>
+                        <h2>Shipping Cost Calculator</h2>
                     </div>
                     <div class="card-body">
-                        <p><strong>Name:</strong> <span id="user-name">...</span></p>
-                        <p><strong>Email:</strong> <span id="user-email">...</span></p>
-                        <p><strong>Role:</strong> <span id="user-role">...</span></p>
+                        <form id="pricing-form">
+                            <div class="form-grid">
+                                <div class="input-group"><label for="basePrice">Product Cost (USD)</label><input type="number" id="basePrice" value="200" required></div>
+                                <div class="input-group"><label for="weightKg">Weight (KG)</label><input type="number" id="weightKg" value="25" required></div>
+                                <div class="input-group"><label for="country">Country</label><input type="text" id="country" value="Kenya" required></div>
+                                <div class="input-group"><label for="hsCode">HS Code</label><input type="text" id="hsCode" value="0101.21" required></div>
+                            </div>
+                            <button type="submit" id="calculate-btn" class="btn btn-primary btn-full"><i class="fas fa-rocket"></i> Calculate Total Cost</button>
+                        </form>
+                        <div id="pricing-results" class="results-container"></div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Orders Card -->
-                <div class="card orders-card">
-                    <div class="card-header">
-                        <i class="fas fa-box-open"></i>
-                        <h2>My Shipments</h2>
-                    </div>
+            <!-- Active Pools Pane -->
+            <div id="pools" class="content-pane">
+                 <h1 class="page-title">Active Pools</h1>
+                 <p class="page-subtitle">Find an existing shipment to join and save on costs.</p>
+                 <div class="card active-pools-card">
+                    <div class="card-header"><i class="fas fa-users"></i><h2>Join an Active Pool</h2></div>
                     <div class="card-body">
-                        <div id="orders-placeholder" class="placeholder-content">
-                            <p>You have no active shipments.</p>
-                            <button class="btn btn-primary">Start a New Shipment</button>
-                        </div>
-                        <!-- Order list would be rendered here in the future -->
+                        <ul class="pool-list">
+                            <li>
+                                <div class="pool-info"><span class="pool-destination"><strong>To:</strong> Nairobi, Kenya</span><span class="pool-eta">ETA: Oct 25, 2025</span></div>
+                                <div class="pool-progress"><div class="progress-bar-bg"><div class="progress-bar" style="width: 75%;"></div></div><span>75% Full</span></div>
+                                <button class="btn btn-secondary btn-small">View & Join</button>
+                            </li>
+                            <li>
+                                <div class="pool-info"><span class="pool-destination"><strong>To:</strong> Mombasa, Kenya</span><span class="pool-eta">ETA: Nov 5, 2025</span></div>
+                                <div class="pool-progress"><div class="progress-bar-bg"><div class="progress-bar" style="width: 40%;"></div></div><span>40% Full</span></div>
+                                <button class="btn btn-secondary btn-small">View & Join</button>
+                            </li>
+                            <li>
+                                <div class="pool-info"><span class="pool-destination"><strong>To:</strong> Nyeri, Kenya</span><span class="pool-eta">ETA: Nov 12, 2025</span></div>
+                                <div class="pool-progress"><div class="progress-bar-bg"><div class="progress-bar" style="width: 90%;"></div></div><span>90% Full</span></div>
+                                <button class="btn btn-secondary btn-small">View & Join</button>
+                            </li>
+                        </ul>
                     </div>
+                </div>
+            </div>
+
+            <!-- My Orders Pane -->
+            <div id="orders" class="content-pane">
+                <h1 class="page-title">My Orders</h1>
+                <p class="page-subtitle">Track your current and past shipments.</p>
+                <div class="placeholder">
+                    <i class="fas fa-receipt"></i>
+                    <p>Your order history will appear here.</p>
+                </div>
+            </div>
+
+            <!-- Knowledge Base Pane -->
+            <div id="knowledge" class="content-pane">
+                <h1 class="page-title">Knowledge Base</h1>
+                <p class="page-subtitle">Guides and FAQs about group shipping.</p>
+                 <div class="placeholder">
+                    <i class="fas fa-question-circle"></i>
+                    <p>Help articles and tutorials will be available here soon.</p>
                 </div>
             </div>
         </main>
     </div>
 
     <script>
-        const welcomeMessage = document.getElementById('welcome-message');
-        const userName = document.getElementById('user-name');
-        const userEmail = document.getElementById('user-email');
-        const userRole = document.getElementById('user-role');
-        const logoutButton = document.getElementById('logout-button');
-        const dashboardContainer = document.querySelector('.dashboard-container');
+        document.addEventListener('DOMContentLoaded', () => {
+            const logoutButton = document.getElementById('logout-button');
+            const pricingForm = document.getElementById('pricing-form');
+            const calculateBtn = document.getElementById('calculate-btn');
+            const pricingResults = document.getElementById('pricing-results');
+            const navLinks = document.querySelectorAll('.nav-link');
+            const contentPanes = document.querySelectorAll('.content-pane');
 
-        async function fetchUserData() {
-            const token = localStorage.getItem('gruppyAuthToken');
+            async function fetchUserData() {
+                const token = localStorage.getItem('gruppyAuthToken');
+                if (!token) { window.location.replace('./login.html'); return; }
 
-            // If token is somehow missing again, redirect
-            if (!token) {
-                window.location.replace('./login.html');
-                return;
-            }
+                try {
+                    const response = await fetch('http://localhost:3000/auth/me', {
+                        method: 'GET',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Session expired.');
+                    
+                    const user = data.user;
+                    document.getElementById('user-name-sidebar').textContent = user.name || 'Gruppy User';
+                    document.getElementById('user-email-sidebar').textContent = user.email || 'No email';
 
-            try {
-                const response = await fetch('http://localhost:3000/auth/me', {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || 'Session expired. Please log in again.');
+                    document.querySelector('.app-layout').style.display = 'flex';
+                } catch (error) {
+                    localStorage.removeItem('gruppyAuthToken');
+                    window.location.replace('./login.html');
                 }
-                
-                // Populate the UI with user data
-                const user = data.user;
-                welcomeMessage.textContent = `Welcome back, ${user.name || 'User'}!`;
-                userName.textContent = user.name;
-                userEmail.textContent = user.email;
-                userRole.textContent = user.role;
-
-                // Show the dashboard now that data is loaded
-                dashboardContainer.style.display = 'block';
-
-            } catch (error) {
-                // If token is invalid/expired, clear it and force re-login
-                localStorage.removeItem('gruppyAuthToken');
-                console.error(error.message); // Log error instead of using alert
-                window.location.replace('./login.html');
             }
-        }
 
-        logoutButton.addEventListener('click', () => {
-            localStorage.removeItem('gruppyAuthToken');
-            window.location.href = './index.html'; // Go to landing page on logout
+            pricingForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const token = localStorage.getItem('gruppyAuthToken');
+                calculateBtn.disabled = true;
+                calculateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+                pricingResults.innerHTML = '';
+                const formData = {
+                    basePrice: parseFloat(document.getElementById('basePrice').value),
+                    weightKg: parseFloat(document.getElementById('weightKg').value),
+                    country: document.getElementById('country').value,
+                    hsCode: document.getElementById('hsCode').value,
+                    distanceKm: 500
+                };
+                try {
+                    const response = await fetch('http://localhost:3000/api/pricing/calculate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify(formData)
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.success) throw new Error(result.error || 'Calculation failed.');
+                    displayPricingResults(result.data);
+                } catch (error) {
+                    pricingResults.innerHTML = `<p class="error">${error.message}</p>`;
+                } finally {
+                    calculateBtn.disabled = false;
+                    calculateBtn.innerHTML = '<i class="fas fa-rocket"></i> Calculate Total Cost';
+                }
+            });
+            
+            function displayPricingResults(data) {
+                pricingResults.innerHTML = `
+                    <div class="result-total"><span>Total Landed Cost</span><strong>${data.total.toFixed(2)} KES</strong></div>
+                    <div class="result-breakdown">
+                        <h4>Cost Breakdown:</h4>
+                        <p><span>Base Price:</span> ${data.basePrice.toFixed(2)}</p>
+                        <p><span>Freight Cost:</span> ${data.freightCost.toFixed(2)}</p>
+                        <p><span>Tax (${(data.taxRate * 100).toFixed(0)}%):</span> ${data.tax.toFixed(2)}</p>
+                    </div>
+                    <button class="btn btn-primary btn-full create-pool-btn"><i class="fas fa-plus-circle"></i> Create a Shipping Pool</button>`;
+            }
+
+            logoutButton.addEventListener('click', () => {
+                localStorage.removeItem('gruppyAuthToken');
+                window.location.href = './index.html';
+            });
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = link.getAttribute('href').substring(1);
+                    
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                    
+                    contentPanes.forEach(pane => {
+                        pane.classList.remove('active');
+                        if (pane.id === targetId) {
+                            pane.classList.add('active');
+                        }
+                    });
+                });
+            });
+
+            fetchUserData();
         });
-
-        // Fetch user data as soon as the page is ready
-        document.addEventListener('DOMContentLoaded', fetchUserData);
     </script>
 
 </body>
