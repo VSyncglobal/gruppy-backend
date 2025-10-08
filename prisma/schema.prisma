@@ -37,20 +37,21 @@ enum PaymentStatus {
 //////////////////////
 
 model User {
-  id               String                   @id @default(cuid())
-  name             String
-  email            String                   @unique
-  password_hash    String
-  role             UserRole                 @default(CONSUMER)
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password_hash String
+  role          UserRole @default(CONSUMER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // relations
-  orders           Order[]
-  affiliate        Affiliate?
-  pricingLogs      PriceCalculationLog[]    @relation("UserPriceCalcLogs")
-  pricingRequests  PricingRequest[]         // future: track interactive requests
-  refreshTokens    RefreshToken[]           // store refresh tokens if you choose DB method
+  orders          Order[]
+  affiliate       Affiliate?
+  pricingLogs     PriceCalculationLog[] @relation("UserPriceCalcLogs")
+  pricingRequests PricingRequest[] // future: track interactive requests
+  refreshTokens   RefreshToken[] // store refresh tokens if you choose DB method
+  PricingLog      PricingLog[]
 }
 
 model RefreshToken {
@@ -84,7 +85,7 @@ model Product {
 
 model FreightRate {
   id        String   @id @default(cuid())
-  route     String   // e.g. "China-Mombasa Sea"
+  route     String // e.g. "China-Mombasa Sea"
   ratePerKg Float
   createdAt DateTime @default(now())
 
@@ -94,11 +95,11 @@ model FreightRate {
 model KRARate {
   id            String    @id @default(cuid())
   hsCode        String
-  duty_rate     Float      @default(0)    // import duty
-  rdl_rate      Float      @default(0)    // Railway Development Levy or similar
-  idf_rate      Float      @default(0)    // Infrastructure Development Fee
-  vat_rate      Float      @default(0)    // VAT
-  description   String?                 // human readable notes
+  duty_rate     Float     @default(0) // import duty
+  rdl_rate      Float     @default(0) // Railway Development Levy or similar
+  idf_rate      Float     @default(0) // Infrastructure Development Fee
+  vat_rate      Float     @default(0) // VAT
+  description   String? // human readable notes
   effectiveFrom DateTime
   effectiveTo   DateTime?
   createdAt     DateTime  @default(now())
@@ -108,24 +109,25 @@ model KRARate {
 }
 
 model PriceCalculationLog {
-  id            String   @id @default(cuid())
-  userId        String?
-  basePrice     Float
-  distanceKm    Float
-  weightKg      Float
-  route         String?   // route used for lookup
-  hsCode        String?   // hsCode used for lookup
-  freightRate   Float?    // snapshot of ratePerKg used
-  duty_rate     Float?    // snapshot of applied duty
-  rdl_rate      Float?
-  idf_rate      Float?
-  vat_rate      Float?
-  taxesTotal    Float?
-  commission    Float?
-  finalPrice    Float
-  createdAt     DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String?
+  basePrice   Float
+  distanceKm  Float
+  weightKg    Float
+  route       String? // route used for lookup
+  hsCode      String? // hsCode used for lookup
+  freightRate Float? // snapshot of ratePerKg used
+  duty_rate   Float? // snapshot of applied duty
+  rdl_rate    Float?
+  idf_rate    Float?
+  vat_rate    Float?
+  taxesTotal  Float?
+  commission  Float?
+  finalPrice  Float
+  createdAt   DateTime @default(now())
 
   user User? @relation("UserPriceCalcLogs", fields: [userId], references: [id])
+
   @@index([userId])
   @@index([hsCode])
   @@index([route])
@@ -133,58 +135,60 @@ model PriceCalculationLog {
 
 model PricingRequest {
   // optional: store interactive requests (for analytics / debug)
-  id         String   @id @default(cuid())
-  userId     String?
-  payload    Json
-  result     Json?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  payload   Json
+  result    Json?
+  createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
 }
 
 model Order {
-  id                String               @id @default(cuid())
-  order_number      String               @unique
-  userId            String
-  productId         String
-  status            OrderStatus          @default(PENDING_PAYMENT)
-  final_price_ksh   Float?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  id              String      @id @default(cuid())
+  order_number    String      @unique
+  userId          String
+  productId       String
+  status          OrderStatus @default(PENDING_PAYMENT)
+  final_price_ksh Float?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  user              User                 @relation(fields: [userId], references: [id])
-  product           Product              @relation(fields: [productId], references: [id])
-  payments          Payment[]
-  statusHistory     OrderStatusHistory[]
+  user          User                 @relation(fields: [userId], references: [id])
+  product       Product              @relation(fields: [productId], references: [id])
+  payments      Payment[]
+  statusHistory OrderStatusHistory[]
 
   @@index([userId])
   @@index([order_number])
 }
 
 model OrderStatusHistory {
-  id         String     @id @default(cuid())
+  id         String      @id @default(cuid())
   orderId    String
   fromStatus OrderStatus
   toStatus   OrderStatus
   note       String?
-  createdAt  DateTime   @default(now())
+  createdAt  DateTime    @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
+
   @@index([orderId])
 }
 
 model Payment {
-  id                 String        @id @default(cuid())
-  orderId            String
-  amount             Float
-  status             PaymentStatus @default(PENDING)
-  method             String
-  mpesa_receipt_number String?      // for M-Pesa receipts
-  transaction_date   DateTime?
-  metadata           Json?
-  createdAt          DateTime      @default(now())
+  id                   String        @id @default(cuid())
+  orderId              String
+  amount               Float
+  status               PaymentStatus @default(PENDING)
+  method               String
+  mpesa_receipt_number String? // for M-Pesa receipts
+  transaction_date     DateTime?
+  metadata             Json?
+  createdAt            DateTime      @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
+
   @@index([orderId])
 }
 
