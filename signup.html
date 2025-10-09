@@ -3,102 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create an Account - Gruppy</title>
+    <title>Sign Up - Gruppy</title>
     <link rel="stylesheet" href="auth-style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
     <div class="auth-container">
-        <div class="auth-form-wrapper">
-            <a href="index.html" class="logo">Gruppy</a>
-            <div class="auth-form">
-                <h1 class="auth-title">Create Your Account</h1>
-                <p class="auth-subtitle">Join the community and start saving today.</p>
-                
-                <form id="signup-form">
-                    <div class="input-group">
-                        <label for="fullname">Full Name</label>
-                        <input type="text" id="fullname" name="fullname" placeholder="e.g., Alex Chen" required>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="email">Email Address</label>
-                        <input type="email" id="email" name="email" placeholder="you@example.com" required>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="password">Create Password</label>
-                        <input type="password" id="password" name="password" placeholder="Minimum 8 characters" required>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-full">Create Account</button>
-                </form>
-
-                <!-- Message area for feedback -->
-                <p id="feedback-message" class="feedback"></p>
-
-                <div class="auth-switch">
-                    <p>Already have an account? <a href="login.html">Log In</a></p>
+        <div class="auth-box">
+            <h2>Create Your Gruppy Account</h2>
+            <form id="signupForm">
+                <div class="input-group">
+                    <label for="firstName">First Name</label>
+                    <input type="text" id="firstName" name="firstName" required>
                 </div>
-            </div>
+                <div class="input-group">
+                    <label for="lastName">Last Name</label>
+                    <input type="text" id="lastName" name="lastName" required>
+                </div>
+                <div class="input-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                 <div class="input-group">
+                    <label for="phone">Phone</label>
+                    <input type="tel" id="phone" name="phone" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="auth-btn">Sign Up</button>
+            </form>
+            <div id="message" class="message"></div>
+            <p class="auth-switch">Already have an account? <a href="/login.html">Log In</a></p>
         </div>
     </div>
 
     <script>
-        const signupForm = document.getElementById('signup-form');
-        const feedbackMessage = document.getElementById('feedback-message');
+        document.getElementById('signupForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
 
-        signupForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            feedbackMessage.textContent = '';
-            
-            // Get user info from the form
-            const fullName = signupForm.fullname.value;
-            const email = signupForm.email.value;
-            const password = signupForm.password.value;
+            const firstName = document.getElementById('firstName').value;
+            const lastName = document.getElementById('lastName').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
+            const password = document.getElementById('password').value;
+            const messageDiv = document.getElementById('message');
 
             try {
-                // ALIGNED: Point to the backend's register endpoint
-                const response = await fetch('http://localhost:3000/auth/register', {
+                const response = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        // ALIGNED: Send 'name' instead of 'fullName' to match the backend
-                        name: fullName, 
-                        email: email,
-                        password: password
-                    })
+                        firstName,
+                        lastName,
+                        email,
+                        phone,
+                        password,
+                        role: 'CONSUMER' // Default role for new users
+                    }),
                 });
 
                 const data = await response.json();
 
-                if (!response.ok) {
-                    // Use the error message from your backend
-                    throw new Error(data.error || 'Something went wrong');
+                if (response.ok) {
+                    messageDiv.textContent = 'Registration successful! Redirecting to login...';
+                    messageDiv.className = 'message success';
+                    setTimeout(() => {
+                        window.location.href = '/login.html';
+                    }, 2000);
+                } else {
+                    messageDiv.textContent = data.error || 'Registration failed';
+                    messageDiv.className = 'message error';
                 }
-
-                // --- Handle Success ---
-                feedbackMessage.textContent = 'Account created! Redirecting to login...';
-                feedbackMessage.style.color = 'var(--accent-color)';
-                setTimeout(() => {
-                    // ALIGNED: Redirect to the login page after successful registration
-                    window.location.href = 'login.html'; 
-                }, 2000);
-
             } catch (error) {
-                // --- Handle Failure ---
-                feedbackMessage.textContent = error.message;
-                feedbackMessage.style.color = 'var(--error-color)';
+                messageDiv.textContent = 'An error occurred. Please try again.';
+                messageDiv.className = 'message error';
             }
         });
     </script>
-
 </body>
 </html>
-

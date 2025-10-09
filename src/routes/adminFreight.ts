@@ -1,10 +1,21 @@
 import { Router } from "express";
-import { getFreightRates, addFreightRate } from "../controllers/freightController";
 import { authenticate } from "../middleware/auth";
+import {
+  createFreightRate,
+  getFreightRates,
+  updateFreightRate,
+  deleteFreightRate,
+} from "../controllers/freightController";
 
 const router = Router();
 
-router.get("/", authenticate, getFreightRates);
-router.post("/", authenticate, addFreightRate);
+// ✅ All freight routes require authentication
+router.use(authenticate);
+
+// ✅ CRUD routes for Freight Rates
+router.post("/", createFreightRate);
+router.get("/", getFreightRates);
+router.put("/:id", updateFreightRate);
+router.delete("/:id", deleteFreightRate);
 
 export default router;

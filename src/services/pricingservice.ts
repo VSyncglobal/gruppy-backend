@@ -28,6 +28,8 @@ export async function calculatePrice(input: PricingInput) {
         route: { equals: input.route, mode: "insensitive" },
       },
     });
+    console.log("🚚 Freight query input:", input.route);
+    console.log("🚚 Freight record found:", freight);
     if (freight) freightRatePerKg = freight.ratePerKg;
   }
 
@@ -43,6 +45,9 @@ export async function calculatePrice(input: PricingInput) {
       },
       orderBy: { effectiveFrom: "desc" },
     });
+    console.log("💰 Tax query input:", input.hsCode);
+    console.log("💰 Tax record found:", taxRecord);
+
 
     if (taxRecord) {
       duty_rate = taxRecord.duty_rate || 0;

@@ -1,36 +1,68 @@
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 
-export async function getFreightRates(req: Request, res: Response) {
+// ✅ Create a new freight rate
+export async function createFreightRate(req: Request, res: Response) {
   try {
-    const rates = await prisma.freightRate.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    res.json({ success: true, data: rates });
-  } catch (error) {
-    console.error("Error fetching freight rates:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-}
+    const { route, ratePerKg } = req.body;
 
-export async function addFreightRate(req: Request, res: Response) {
-  try {
-    const { country, ratePerKg } = req.body;
-
-    if (!country || !ratePerKg) {
+    if (!route || ratePerKg === undefined) {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    const rate = await prisma.freightRate.create({
+    const freight = await prisma.freightRate.create({
       data: {
-        route: country, // ✅ schema uses route instead of country
+        route,
         ratePerKg: Number(ratePerKg),
       },
     });
 
-    res.json({ success: true, data: rate });
+    res.status(201).json({ success: true, data: freight });
+  } catch (error: any) {
+    console.error("Freight creation error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ✅ Get all freight rates
+export async function getFreightRates(req: Request, res: Response) {
+  try {
+    const freightRates = await prisma.freightRate.findMany();
+    res.json({ success: true, data: freightRates });
   } catch (error) {
-    console.error("Error adding freight rate:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ✅ Update freight rate
+export async function updateFreightRate(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { route, ratePerKg } = req.body;
+
+    const updated = await prisma.freightRate.update({
+      where: { id },
+      data: { route, ratePerKg: Number(ratePerKg) },
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// ✅ Delete freight rate
+export async function deleteFreightRate(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    await prisma.freightRate.delete({ where: { id } });
+
+    res.json({ success: true, message: "Freight rate deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
   }
 }
