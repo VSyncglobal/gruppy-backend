@@ -1,17 +1,21 @@
+
+// src/controllers/pricingcontroller.ts
+
 import { Request, Response } from "express";
-import { calculatePrice } from "../services/pricingservice"; // ⚠️ check spelling (capital S)
+import { calculatePrice } from "../services/pricingservice";
 import prisma from "../utils/prismaClient";
 import { AuthRequest } from "../middleware/auth";
 
 // ========================
-// 1️⃣ PRICE CALCULATION
+// 1️⃣ PRICE CALCULATION (FIXED)
 // ========================
-export async function calculatePricing(req: Request, res: Response) {
+export async function calculatePricing(req: AuthRequest, res: Response) {
   try {
-    const { basePrice, distanceKm, weightKg, affiliateId } = req.body;
+    // ✅ FIX: Added hsCode and route to be extracted from the body
+    const { basePrice, distanceKm, weightKg, affiliateId, hsCode, route } = req.body;
 
-    if (!basePrice || !distanceKm || !weightKg) {
-      return res.status(400).json({ error: "Missing required fields" });
+    if (!basePrice || !distanceKm || !weightKg || !hsCode || !route) {
+      return res.status(400).json({ error: "Missing required fields: basePrice, distanceKm, weightKg, hsCode, and route are all required." });
     }
 
     const result = await calculatePrice({
@@ -19,7 +23,9 @@ export async function calculatePricing(req: Request, res: Response) {
       distanceKm: Number(distanceKm),
       weightKg: Number(weightKg),
       affiliateId,
-      userId: (req as any).user?.id, // ✅ capture from token
+      hsCode, // ✅ FIX: Pass hsCode to the service
+      route,   // ✅ FIX: Pass route to the service
+      userId: req.user?.userId, // ✅ FIX: Correctly access userId from token
     });
 
     res.json({ success: true, data: result });
@@ -29,6 +35,7 @@ export async function calculatePricing(req: Request, res: Response) {
   }
 }
 
+// ... the rest of your file (getPricingLogs function) remains the same
 // ========================
 // 2️⃣ FETCH PRICING LOGS
 // ========================
