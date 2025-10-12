@@ -49,9 +49,13 @@ model User {
   orders          Order[]
   affiliate       Affiliate?
   pricingLogs     PriceCalculationLog[] @relation("UserPriceCalcLogs")
-  pricingRequests PricingRequest[] // future: track interactive requests
-  refreshTokens   RefreshToken[] // store refresh tokens if you choose DB method
+  pricingRequests PricingRequest[]
+  refreshTokens   RefreshToken[]
   PricingLog      PricingLog[]
+
+  // NEW
+  createdPools    Pool[]       @relation("CreatedPools")
+  poolMemberships PoolMember[]
 }
 
 model RefreshToken {
@@ -74,13 +78,32 @@ model Affiliate {
   user User @relation(fields: [userId], references: [id])
 }
 
+model Payment {
+  id                   String        @id @default(cuid())
+  orderId              String
+  amount               Float
+  status               PaymentStatus @default(PENDING)
+  method               String
+  mpesa_receipt_number String?
+  transaction_date     DateTime?
+  metadata             Json?
+  createdAt            DateTime      @default(now())
+
+  order      Order       @relation(fields: [orderId], references: [id])
+  poolMember PoolMember? @relation("PaymentToPoolMember") // ✅ explicit name
+
+  @@index([orderId])
+}
+
 model Product {
   id        String   @id @default(cuid())
   name      String
   hsCode    String
   basePrice Float
   createdAt DateTime @default(now())
-  orders    Order[]
+
+  orders Order[]
+  pools  Pool[]
 }
 
 model FreightRate {
@@ -176,22 +199,6 @@ model OrderStatusHistory {
   @@index([orderId])
 }
 
-model Payment {
-  id                   String        @id @default(cuid())
-  orderId              String
-  amount               Float
-  status               PaymentStatus @default(PENDING)
-  method               String
-  mpesa_receipt_number String? // for M-Pesa receipts
-  transaction_date     DateTime?
-  metadata             Json?
-  createdAt            DateTime      @default(now())
-
-  order Order @relation(fields: [orderId], references: [id])
-
-  @@index([orderId])
-}
-
 //////////////////////
 // Legacy / utility (optional)
 //////////////////////
@@ -206,6 +213,51 @@ model PricingLog {
   userId     String?
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id])
+}
+
+enum PoolStatus {
+  OPEN
+  FILLED
+  READY_TO_SHIP
+  CLOSED
+  CANCELLED
+}
+
+model Pool {
+  id              String     @id @default(cuid())
+  title           String
+  description     String?
+  productId       String
+  pricePerUnit    Float
+  targetQuantity  Int
+  minJoiners      Int        @default(1)
+  currentQuantity Int        @default(0)
+  deadline        DateTime
+  status          PoolStatus @default(OPEN)
+  createdById     String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // relations
+  product Product      @relation(fields: [productId], references: [id])
+  creator User         @relation("CreatedPools", fields: [createdById], references: [id])
+  members PoolMember[]
+}
+
+model PoolMember {
+  id        String   @id @default(cuid())
+  poolId    String
+  userId    String
+  quantity  Int      @default(1)
+  paymentId String?  @unique
+  joinedAt  DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  pool    Pool     @relation(fields: [poolId], references: [id])
+  payment Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id]) // ✅ explicit name
+
+  @@index([poolId])
+  @@index([userId])
 }
 
 //////////////////////

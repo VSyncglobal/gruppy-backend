@@ -10,14 +10,16 @@
     <div class="auth-container">
         <div class="auth-box">
             <h2>Create Your Gruppy Account</h2>
-            <form id="signupForm">
-                <div class="input-group">
-                    <label for="firstName">First Name</label>
-                    <input type="text" id="firstName" name="firstName" required>
-                </div>
-                <div class="input-group">
-                    <label for="lastName">Last Name</label>
-                    <input type="text" id="lastName" name="lastName" required>
+            <form id="signupForm" novalidate>
+                <div class="form-row">
+                    <div class="input-group">
+                        <label for="firstName">First Name</label>
+                        <input type="text" id="firstName" name="firstName" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="lastName">Last Name</label>
+                        <input type="text" id="lastName" name="lastName" required>
+                    </div>
                 </div>
                 <div class="input-group">
                     <label for="email">Email</label>
@@ -25,13 +27,23 @@
                 </div>
                  <div class="input-group">
                     <label for="phone">Phone</label>
-                    <input type="tel" id="phone" name="phone" required>
+                    <input type="tel" id="phone" name="phone" required placeholder="e.g., 0712345678">
                 </div>
                 <div class="input-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required>
+                    <div id="password-strength-meter">
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                        <div class="strength-bar"></div>
+                    </div>
+                    <p id="password-strength-text"></p>
                 </div>
-                <button type="submit" class="auth-btn">Sign Up</button>
+                <button type="submit" class="auth-btn">
+                    <span class="btn-text">Sign Up</span>
+                    <span class="btn-loader"></span>
+                </button>
             </form>
             <div id="message" class="message"></div>
             <p class="auth-switch">Already have an account? <a href="/login.html">Log In</a></p>
@@ -39,29 +51,77 @@
     </div>
 
     <script>
-        document.getElementById('signupForm').addEventListener('submit', async function(event) {
+        const signupForm = document.getElementById('signupForm');
+        const passwordInput = document.getElementById('password');
+        const strengthMeter = document.getElementById('password-strength-meter');
+        const strengthText = document.getElementById('password-strength-text');
+        const strengthBars = strengthMeter.querySelectorAll('.strength-bar');
+
+        passwordInput.addEventListener('input', () => {
+            const password = passwordInput.value;
+            const strength = checkPasswordStrength(password);
+            updateStrengthMeter(strength);
+        });
+
+        function checkPasswordStrength(password) {
+            let score = 0;
+            if (password.length >= 8) score++;
+            if (/[A-Z]/.test(password)) score++;
+            if (/[0-9]/.test(password)) score++;
+            if (/[^A-Za-z0-9]/.test(password)) score++;
+            return score;
+        }
+
+        function updateStrengthMeter(strength) {
+            strengthBars.forEach((bar, index) => {
+                bar.className = 'strength-bar'; // Reset classes
+                if (index < strength) {
+                    if (strength <= 2) bar.classList.add('weak');
+                    else if (strength === 3) bar.classList.add('medium');
+                    else if (strength === 4) bar.classList.add('strong');
+                }
+            });
+
+            const strengthLabels = ['Very Weak', 'Weak', 'Medium', 'Strong', 'Very Strong'];
+            strengthText.textContent = passwordInput.value.length > 0 ? `Strength: ${strengthLabels[strength]}` : '';
+            if (strength <= 1 && passwordInput.value.length > 0) {
+                strengthText.style.color = '#c53030';
+            } else {
+                strengthText.style.color = '#718096';
+            }
+        }
+
+        signupForm.addEventListener('submit', async function(event) {
             event.preventDefault();
+            const password = passwordInput.value;
+            const messageDiv = document.getElementById('message');
+            const signupButton = this.querySelector('.auth-btn');
+
+            if (checkPasswordStrength(password) < 2) {
+                messageDiv.textContent = 'Password is too weak. Please use at least 8 characters with a mix of letters and numbers.';
+                messageDiv.className = 'message error';
+                return;
+            }
+            
+            signupButton.classList.add('loading');
 
             const firstName = document.getElementById('firstName').value;
             const lastName = document.getElementById('lastName').value;
             const email = document.getElementById('email').value;
             const phone = document.getElementById('phone').value;
-            const password = document.getElementById('password').value;
-            const messageDiv = document.getElementById('message');
+            const name = `${firstName} ${lastName}`;
 
             try {
-                const response = await fetch('/api/auth/register', {
+                // *** FIX: Using absolute URL to connect to the running server ***
+                const response = await fetch('http://localhost:3000/auth/register', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        firstName,
-                        lastName,
+                        name,
                         email,
                         phone,
                         password,
-                        role: 'CONSUMER' // Default role for new users
+                        role: 'CONSUMER'
                     }),
                 });
 
@@ -70,18 +130,20 @@
                 if (response.ok) {
                     messageDiv.textContent = 'Registration successful! Redirecting to login...';
                     messageDiv.className = 'message success';
-                    setTimeout(() => {
-                        window.location.href = '/login.html';
-                    }, 2000);
+                    setTimeout(() => { window.location.href = '/login.html'; }, 2000);
                 } else {
                     messageDiv.textContent = data.error || 'Registration failed';
                     messageDiv.className = 'message error';
                 }
             } catch (error) {
-                messageDiv.textContent = 'An error occurred. Please try again.';
+                console.error('Fetch Error:', error);
+                messageDiv.textContent = 'Could not connect to the server. Please ensure it is running and accessible.';
                 messageDiv.className = 'message error';
+            } finally {
+                signupButton.classList.remove('loading');
             }
         });
     </script>
 </body>
 </html>
+

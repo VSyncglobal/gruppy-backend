@@ -25,7 +25,7 @@ export async function calculatePricing(req: AuthRequest, res: Response) {
       affiliateId,
       hsCode, // ✅ FIX: Pass hsCode to the service
       route,   // ✅ FIX: Pass route to the service
-      userId: req.user?.userId, // ✅ FIX: Correctly access userId from token
+      userId: req.user?.id, // ✅ FIX: Correctly access userId from token
     });
 
     res.json({ success: true, data: result });
@@ -59,7 +59,7 @@ export async function getPricingLogs(req: AuthRequest, res: Response) {
     } else {
       // ✅ Regular users see only their own logs
       logs = await prisma.priceCalculationLog.findMany({
-        where: { userId: user.userId }, // ✅ use user.id, not user.userId
+        where: { userId: user.id },// ✅ use user.id, not user.userId
         orderBy: { createdAt: "desc" },
       });
     }

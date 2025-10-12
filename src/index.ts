@@ -10,8 +10,8 @@ import pricingRoutes from "./routes/pricing";
 import pricingLogRoutes from "./routes/pricingLog";
 import adminFreightRoutes from "./routes/adminFreight";
 import adminTaxRoutes from "./routes/adminTax";
-
-
+import userRoutes from "./routes/userRoutes";
+import poolRoutes from "./routes/poolRoutes";
 
 import healthRouter from "./routes/health";
 
@@ -46,6 +46,8 @@ app.use("/api/pricing", pricingRoutes);
 app.use("/api/pricing/logs", pricingLogRoutes);
 app.use("/api/admin/freight", adminFreightRoutes);
 app.use("/api/admin/tax", adminTaxRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/pools", poolRoutes);
 
 // Root route
 app.get("/", (req: Request, res: Response) => {

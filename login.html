@@ -19,7 +19,10 @@
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required>
                 </div>
-                <button type="submit" class="auth-btn">Log In</button>
+                <button type="submit" class="auth-btn">
+                    <span class="btn-text">Log In</span>
+                    <span class="btn-loader"></span>
+                </button>
             </form>
             <div id="message" class="message"></div>
             <p class="auth-switch">Don't have an account? <a href="/signup.html">Sign Up</a></p>
@@ -33,9 +36,13 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const messageDiv = document.getElementById('message');
+            const loginButton = this.querySelector('.auth-btn');
 
+            loginButton.classList.add('loading');
+            
             try {
-                const response = await fetch('/api/auth/login', {
+                // *** FIX: Using correct absolute URL to connect to the running server ***
+                const response = await fetch('http://localhost:3000/auth/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -46,10 +53,8 @@
                 const data = await response.json();
 
                 if (response.ok && data.token) {
-                    // Store the token in localStorage
                     localStorage.setItem('gruppyAuthToken', data.token);
-
-                    messageDiv.textContent = 'Login successful! Redirecting to your dashboard...';
+                    messageDiv.textContent = 'Login successful! Redirecting...';
                     messageDiv.className = 'message success';
                     setTimeout(() => {
                         window.location.href = '/dashboard.html';
@@ -57,12 +62,16 @@
                 } else {
                     messageDiv.textContent = data.error || 'Invalid credentials';
                     messageDiv.className = 'message error';
+                    loginButton.classList.remove('loading');
                 }
             } catch (error) {
-                messageDiv.textContent = 'An error occurred. Please try again.';
+                console.error('Fetch Error:', error);
+                messageDiv.textContent = 'Could not connect to the server. Please ensure it is running and accessible.';
                 messageDiv.className = 'message error';
+                loginButton.classList.remove('loading');
             }
         });
     </script>
 </body>
 </html>
+

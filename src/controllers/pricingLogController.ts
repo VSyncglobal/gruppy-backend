@@ -28,14 +28,14 @@ export async function getAllLogs(req: AuthRequest, res: Response) {
 // 👤 User: view only their own logs
 export async function getUserLogs(req: AuthRequest, res: Response) {
   try {
-    if (!req.user?.userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (!req.user?.id) {
+  return res.status(401).json({ error: "Unauthorized" });
+}
 
-    const logs = await prisma.pricingLog.findMany({
-      where: { userId: req.user.userId },
-      orderBy: { createdAt: "desc" },
-    });
+const logs = await prisma.priceCalculationLog.findMany({
+  where: { userId: req.user.id },
+});
+
 
     res.json({ success: true, count: logs.length, data: logs });
   } catch (err: any) {

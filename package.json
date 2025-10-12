@@ -10,7 +10,8 @@
     "test": "jest --passWithNoTests",
     "migrate": "prisma migrate dev --name init",
     "generate": "prisma generate",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "seed": "ts-node prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
