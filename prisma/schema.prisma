@@ -232,6 +232,9 @@ model Pool {
   targetQuantity  Int
   minJoiners      Int        @default(1)
   currentQuantity Int        @default(0)
+  profitMargin    Float? // ✅ calculated automatically from base cost
+  progress        Float?     @default(0)
+  cumulativeValue Float?     @default(0)
   deadline        DateTime
   status          PoolStatus @default(OPEN)
   createdById     String
@@ -242,6 +245,32 @@ model Pool {
   product Product      @relation(fields: [productId], references: [id])
   creator User         @relation("CreatedPools", fields: [createdById], references: [id])
   members PoolMember[]
+  finance PoolFinance? @relation("PoolToFinance") // ✅ Only name the relation here
+
+  @@index([status])
+  @@index([createdById])
+  @@index([productId])
+}
+
+model PoolFinance {
+  id              String    @id @default(cuid())
+  poolId          String    @unique
+  baseCostPerUnit Float
+  logisticCost    Float?    @default(0)
+  totalRevenue    Float?    @default(0)
+  totalCost       Float?    @default(0)
+  grossProfit     Float?    @default(0)
+  platformFee     Float?    @default(0.05)
+  platformEarning Float?    @default(0)
+  memberSavings   Float?    @default(0)
+  isFinalized     Boolean   @default(false)
+  finalizedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // ✅ Define the relation and references ONLY here
+  pool          Pool            @relation("PoolToFinance", fields: [poolId], references: [id])
+  AdminEarnings AdminEarnings[]
 }
 
 model PoolMember {
@@ -254,10 +283,26 @@ model PoolMember {
 
   user    User     @relation(fields: [userId], references: [id])
   pool    Pool     @relation(fields: [poolId], references: [id])
-  payment Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id]) // ✅ explicit name
+  payment Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id])
 
   @@index([poolId])
   @@index([userId])
+}
+
+//////////////////////
+// PHASE 2: PROFIT & ADMIN EARNINGS
+//////////////////////
+
+model AdminEarnings {
+  id            String   @id @default(cuid())
+  poolFinanceId String
+  amount        Float
+  description   String?
+  createdAt     DateTime @default(now())
+
+  poolFinance PoolFinance @relation(fields: [poolFinanceId], references: [id])
+
+  @@index([poolFinanceId])
 }
 
 //////////////////////

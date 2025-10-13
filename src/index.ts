@@ -12,7 +12,7 @@ import adminFreightRoutes from "./routes/adminFreight";
 import adminTaxRoutes from "./routes/adminTax";
 import userRoutes from "./routes/userRoutes";
 import poolRoutes from "./routes/poolRoutes";
-
+import poolFinanceRoutes from "./routes/poolFinanceRoutes";
 import healthRouter from "./routes/health";
 
 dotenv.config();
@@ -48,6 +48,7 @@ app.use("/api/admin/freight", adminFreightRoutes);
 app.use("/api/admin/tax", adminTaxRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/pools", poolRoutes);
+app.use("/api/pool-finance", poolFinanceRoutes);
 
 // Root route
 app.get("/", (req: Request, res: Response) => {
