@@ -3,31 +3,24 @@ import prisma from "../utils/prismaClient";
 import { PoolStatus, UserRole } from "@prisma/client";
 import { updatePoolFinance } from "../hooks/poolFinanceHooks";
 
-/**
- * 🏗️ Compute profit margin
- * Formula: (SellingPrice - BaseImportCost) / BaseImportCost
- */
+// Helper functions can remain as they are good utility functions
 function calculateProfitMargin(baseCost: number, pricePerUnit: number): number {
   if (!baseCost || baseCost <= 0) return 0;
   return (pricePerUnit - baseCost) / baseCost;
 }
 
-/**
- * 🧮 Estimate minimum joiners based on profitability
- * Ensures Gruppy breaks even after taxes + freight + profit margin
- */
 function estimateMinJoiners(baseCost: number, pricePerUnit: number, targetQty: number): number {
   const profitPerItem = pricePerUnit - baseCost;
-  if (profitPerItem <= 0) return targetQty; // no profit scenario
-  const requiredProfit = baseCost * 0.05 * targetQty; // baseline 5% profit
+  if (profitPerItem <= 0) return targetQty;
+  const requiredProfit = baseCost * 0.05 * targetQty;
   const minJoiners = Math.ceil(requiredProfit / profitPerItem);
-  return Math.max(5, Math.min(minJoiners, targetQty)); // between 5 and total target
+  return Math.max(5, Math.min(minJoiners, targetQty));
 }
 
 /**
  * ✅ CREATE POOL
  * - Auto-computes profit margin & min joiners
- * - Auto-creates corresponding PoolFinance record
+ * - Auto-creates corresponding PoolFinance record within a transaction
  */
 export async function createPool(req: Request, res: Response) {
   try {
@@ -45,7 +38,6 @@ export async function createPool(req: Request, res: Response) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // 🔍 Fetch product cost base (import cost simulation)
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return res.status(404).json({ error: "Product not found" });
 
@@ -53,42 +45,34 @@ export async function createPool(req: Request, res: Response) {
     const margin = calculateProfitMargin(baseCost, Number(pricePerUnit));
     const minJoiners = estimateMinJoiners(baseCost, Number(pricePerUnit), Number(targetQuantity));
 
-    // ✅ Create Pool
-    const pool = await prisma.pool.create({
-      data: {
-        title,
-        description,
-        productId,
-        pricePerUnit: Number(pricePerUnit),
-        targetQuantity: Number(targetQuantity),
-        deadline: new Date(deadline),
-        createdById,
-        currentQuantity: 0,
-        status: PoolStatus.OPEN,
-        // @ts-ignore custom field (ensure added in schema if needed)
-        profitMargin: margin,
-        minJoiners,
-      },
+    // ✨ Use a transaction to create the Pool and its associated PoolFinance record together
+    const newPool = await prisma.$transaction(async (tx) => {
+      const pool = await tx.pool.create({
+        data: {
+          title,
+          description,
+          productId,
+          pricePerUnit: Number(pricePerUnit),
+          targetQuantity: Number(targetQuantity),
+          deadline: new Date(deadline),
+          createdById,
+          minJoiners,
+          // Storing profitMargin and progress on the pool model is okay for denormalization
+          // but ensure these fields exist in your `schema.prisma` file.
+          // For now, we will rely on the PoolFinance record as the source of truth.
+        },
+      });
+
+      // Call the finance hook to create the initial financial record
+      await updatePoolFinance(tx, pool.id);
+
+      return pool;
     });
 
-    // ✅ Auto-create PoolFinance record
-    await prisma.poolFinance.create({
-      data: {
-        poolId: pool.id,
-        baseCostPerUnit: baseCost,
-        logisticCost: 0,
-        totalRevenue: 0,
-        totalCost: 0,
-        grossProfit: 0,
-        platformEarning: 0,
-        memberSavings: 0,
-      },
-    });
-
-    res.json({
+    res.status(201).json({
       success: true,
       message: "✅ Pool created successfully with financial tracking.",
-      data: pool,
+      data: newPool,
     });
   } catch (error) {
     console.error("❌ Error creating pool:", error);
@@ -96,11 +80,10 @@ export async function createPool(req: Request, res: Response) {
   }
 }
 
+
 /**
- * ✅ JOIN POOL
- * - Adds user as member
- * - Updates quantity, status, progress
- * - Triggers finance recalculation
+ * ✅ JOIN POOL (Refactored for Transactional Integrity)
+ * - Adds user, updates pool, and recalculates finance in a single atomic operation.
  */
 export async function joinPool(req: Request, res: Response) {
   try {
@@ -109,62 +92,79 @@ export async function joinPool(req: Request, res: Response) {
 
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const pool = await prisma.pool.findUnique({ where: { id: poolId } });
-    if (!pool) return res.status(404).json({ error: "Pool not found" });
-    if (pool.status !== PoolStatus.OPEN) {
-      return res.status(400).json({ error: "Pool is not open for joining" });
-    }
+    // ✨ WRAP THE ENTIRE LOGIC IN A PRISMA TRANSACTION
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const pool = await tx.pool.findUnique({ where: { id: poolId } });
+      if (!pool) throw new Error("Pool not found");
 
-    const existingMember = await prisma.poolMember.findFirst({ where: { poolId, userId } });
-    if (existingMember) {
-      return res.status(400).json({ error: "User already joined this pool" });
-    }
+      if (pool.status !== PoolStatus.OPEN) {
+        throw new Error("Pool is not open for joining");
+      }
 
-    const qty = quantity ? Number(quantity) : 1;
-    const newQuantity = pool.currentQuantity + qty;
-    const progress = (newQuantity / pool.targetQuantity) * 100;
+      const existingMember = await tx.poolMember.findFirst({
+        where: { poolId, userId },
+      });
+      if (existingMember) {
+        throw new Error("User already joined this pool");
+      }
 
-    let newStatus: PoolStatus = pool.status;
-    if (newQuantity >= pool.targetQuantity) newStatus = PoolStatus.FILLED;
-    else if ((pool as any).minJoiners && newQuantity >= (pool as any).minJoiners)
-      newStatus = PoolStatus.READY_TO_SHIP;
+      const qty = quantity ? Number(quantity) : 1;
+      const member = await tx.poolMember.create({
+        data: {
+          poolId,
+          userId,
+          quantity: qty,
+        },
+      });
 
-    const [member, updatedPool] = await prisma.$transaction([
-      prisma.poolMember.create({ data: { poolId, userId, quantity: qty } }),
-      prisma.pool.update({
+      const newQuantity = pool.currentQuantity + qty;
+      let newStatus: PoolStatus = pool.status;
+
+      if (newQuantity >= pool.targetQuantity) {
+        newStatus = PoolStatus.FILLED;
+      } else if (newQuantity >= pool.minJoiners) {
+        newStatus = PoolStatus.READY_TO_SHIP;
+      }
+
+      const updatedPool = await tx.pool.update({
         where: { id: poolId },
         data: {
           currentQuantity: newQuantity,
           status: newStatus,
-          // @ts-ignore optional schema field
-          progress,
         },
-      }),
-    ]);
+      });
 
-    // 🔁 Update financial metrics
-    await updatePoolFinance(poolId);
+      // ✅ Correctly call the finance hook with the transaction client and poolId
+      await updatePoolFinance(tx, poolId);
+
+      return { member, updatedPool, newStatus };
+    });
 
     res.json({
       success: true,
       message:
-        newStatus === PoolStatus.FILLED
+        transactionResult.newStatus === PoolStatus.FILLED
           ? "✅ Pool filled — no more members can join."
-          : newStatus === PoolStatus.READY_TO_SHIP
+          : transactionResult.newStatus === PoolStatus.READY_TO_SHIP
           ? "✅ Pool reached minimum joiners — shipping preparation can begin!"
           : "✅ Joined pool successfully.",
-      data: { member, updatedPool },
+      data: {
+        member: transactionResult.member,
+        updatedPool: transactionResult.updatedPool,
+      },
     });
-  } catch (error) {
-    console.error("❌ Error joining pool:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+  } catch (error: any) {
+    console.error("❌ Error joining pool:", error.message);
+    res.status(400).json({ error: error.message || "Failed to join pool" });
   }
 }
 
+// The GET functions can remain largely the same, but should fetch from PoolFinance
+// for financial data to ensure it's the single source of truth.
+
 /**
- * ✅ GET ALL POOLS (Role-based view)
- * - Consumers: Hide sensitive data
- * - Admins: See profit, cumulative revenue, and savings
+ * ✅ GET ALL POOLS (Refactored for Accuracy)
+ * - Fetches financial data from the related PoolFinance record for Admins.
  */
 export async function getPools(req: Request, res: Response) {
   try {
@@ -172,23 +172,28 @@ export async function getPools(req: Request, res: Response) {
     const pools = await prisma.pool.findMany({
       include: {
         product: true,
-        members: true,
         creator: { select: { id: true, name: true, email: true } },
+        finance: true, // Eager load the finance record
       },
       orderBy: { createdAt: "desc" },
     });
 
     const formatted = pools.map((pool) => {
-      const progress = (pool.currentQuantity / pool.targetQuantity) * 100;
-      return {
-        ...pool,
-        progress: Math.round(progress),
-        ...(role === UserRole.ADMIN
+      const progress = pool.targetQuantity > 0 ? (pool.currentQuantity / pool.targetQuantity) * 100 : 0;
+      const adminData =
+        role === UserRole.ADMIN && pool.finance
           ? {
-              profitMargin: (pool as any).profitMargin,
-              cumulativeAmount: pool.currentQuantity * pool.pricePerUnit,
+              finance: pool.finance,
             }
-          : {}),
+          : {};
+
+      // Remove sensitive data for consumers
+      const { finance, ...restOfPool } = pool;
+
+      return {
+        ...restOfPool,
+        progress: Math.round(progress),
+        ...(adminData),
       };
     });
 
@@ -200,8 +205,8 @@ export async function getPools(req: Request, res: Response) {
 }
 
 /**
- * ✅ GET POOL BY ID
- * - Returns role-based details and progress
+ * ✅ GET POOL BY ID (Refactored for Accuracy)
+ * - Fetches financial data from the related PoolFinance record for Admins.
  */
 export async function getPoolById(req: Request, res: Response) {
   try {
@@ -222,18 +227,16 @@ export async function getPoolById(req: Request, res: Response) {
 
     if (!pool) return res.status(404).json({ error: "Pool not found" });
 
-    const progress = (pool.currentQuantity / pool.targetQuantity) * 100;
+    const progress = pool.targetQuantity > 0 ? (pool.currentQuantity / pool.targetQuantity) * 100 : 0;
+    
+    // Conditionally hide finance data based on role
+    if (role !== UserRole.ADMIN) {
+      delete (pool as any).finance;
+    }
 
     const result = {
       ...pool,
       progress: Math.round(progress),
-      ...(role === UserRole.ADMIN
-        ? {
-            profitMargin: (pool as any).profitMargin,
-            cumulativeAmount: pool.currentQuantity * pool.pricePerUnit,
-            finance: pool.finance,
-          }
-        : {}),
     };
 
     res.json({ success: true, data: result });

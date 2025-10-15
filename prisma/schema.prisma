@@ -31,6 +31,10 @@ enum PaymentStatus {
   SUCCESS
   FAILED
 }
+enum DeletionEntityType {
+  PAYMENT
+  POOL_MEMBER
+}
 
 //////////////////////
 // MODELS
@@ -80,7 +84,7 @@ model Affiliate {
 
 model Payment {
   id                   String        @id @default(cuid())
-  orderId              String
+  orderId              String? // ✅ FIX: Made this field optional
   amount               Float
   status               PaymentStatus @default(PENDING)
   method               String
@@ -89,8 +93,9 @@ model Payment {
   metadata             Json?
   createdAt            DateTime      @default(now())
 
-  order      Order       @relation(fields: [orderId], references: [id])
-  poolMember PoolMember? @relation("PaymentToPoolMember") // ✅ explicit name
+  // ✅ FIX: The relation also becomes optional
+  order      Order?      @relation(fields: [orderId], references: [id])
+  poolMember PoolMember? @relation("PaymentToPoolMember")
 
   @@index([orderId])
 }
@@ -289,6 +294,16 @@ model PoolMember {
   @@index([userId])
 }
 
+model DeletionLog {
+  id         String             @id @default(cuid())
+  entityType DeletionEntityType // What kind of record was deleted (e.g., PAYMENT)
+  entityId   String             // The ID of the deleted record
+  reason     String             // Why it was deleted (e.g., "Expired pending payment")
+  metadata   Json?              // Optional: To store extra context
+  deletedAt  DateTime           @default(now())
+
+  @@index([entityType, entityId])
+}
 //////////////////////
 // PHASE 2: PROFIT & ADMIN EARNINGS
 //////////////////////

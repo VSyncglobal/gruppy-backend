@@ -5,6 +5,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
+
+// Route Imports
 import authRouter from "./routes/auth";
 import pricingRoutes from "./routes/pricing";
 import pricingLogRoutes from "./routes/pricingLog";
@@ -12,8 +14,11 @@ import adminFreightRoutes from "./routes/adminFreight";
 import adminTaxRoutes from "./routes/adminTax";
 import userRoutes from "./routes/userRoutes";
 import poolRoutes from "./routes/poolRoutes";
-import poolFinanceRoutes from "./routes/poolFinanceRoutes";
 import healthRouter from "./routes/health";
+import paymentRoutes from "./routes/paymentRoutes";
+
+// ✨ NEW: Import the job scheduler starter
+import { startJobs } from "./jobs";
 
 dotenv.config();
 
@@ -24,7 +29,6 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
 
 // Rate limiting (100 requests/min)
 const limiter = rateLimit({
@@ -48,7 +52,7 @@ app.use("/api/admin/freight", adminFreightRoutes);
 app.use("/api/admin/tax", adminTaxRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/pools", poolRoutes);
-app.use("/api/pool-finance", poolFinanceRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // Root route
 app.get("/", (req: Request, res: Response) => {
@@ -63,6 +67,10 @@ app.listen(PORT, async () => {
 
     await redis.ping();
     console.log("✅ Connected to Redis");
+
+    // ✨ NEW: Start the scheduled jobs when the server starts
+    startJobs();
+
   } catch (err) {
     console.error("❌ Startup connection error:", err);
   }
