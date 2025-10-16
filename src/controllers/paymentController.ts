@@ -14,11 +14,6 @@ export const initiatePoolPayment = async (req: AuthRequest, res: Response) => {
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  if (!poolMemberId || !method) {
-    return res
-      .status(400)
-      .json({ error: "Both poolMemberId and method are required" });
-  }
 
   try {
     const poolMember = await prisma.poolMember.findFirst({

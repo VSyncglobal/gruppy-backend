@@ -2,6 +2,9 @@ import { Router } from "express";
 import { authenticate } from "../middleware/auth";
 import { calculatePricing, getPricingLogs } from "../controllers/pricingcontroller";
 import prisma from "../utils/prismaClient";
+import { validate } from "../middleware/validate"; // ✨ IMPORT
+import { calculatePriceSchema } from "../schemas/pricingSchemas"; // ✨ IMPORT
+
 
 // Calculation parameters interface
 interface PricingInput {
@@ -60,8 +63,7 @@ export async function calculatePrice({
 const router = Router();
 
 // POST /api/pricing/calculate
-router.post("/calculate", authenticate, calculatePricing);
-
+router.post("/calculate", authenticate, validate(calculatePriceSchema), calculatePricing);
 // GET /api/pricing/logs
 router.get("/logs", authenticate, getPricingLogs);
 

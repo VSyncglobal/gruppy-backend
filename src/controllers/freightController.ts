@@ -6,10 +6,6 @@ export async function createFreightRate(req: Request, res: Response) {
   try {
     const { route, ratePerKg } = req.body;
 
-    if (!route || ratePerKg === undefined) {
-      return res.status(400).json({ error: "Missing fields" });
-    }
-
     const freight = await prisma.freightRate.create({
       data: {
         route,

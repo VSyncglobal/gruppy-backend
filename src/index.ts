@@ -1,4 +1,6 @@
 import express, { Request, Response } from "express";
+import * as Sentry from "@sentry/node"; // ✨ ADD SENTRY IMPORT
+import logger from "./utils/logger";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
@@ -16,16 +18,31 @@ import userRoutes from "./routes/userRoutes";
 import poolRoutes from "./routes/poolRoutes";
 import healthRouter from "./routes/health";
 import paymentRoutes from "./routes/paymentRoutes";
+import productRoutes from "./routes/productRoutes";
+import adminUserRoutes from "./routes/adminUserRoutes";
+import adminAffiliateRoutes from "./routes/adminAffiliateRoutes";
+
 
 // ✨ NEW: Import the job scheduler starter
 import { startJobs } from "./jobs";
 
 dotenv.config();
+// ✨ INITIALIZE SENTRY - MUST BE THE FIRST THING
+Sentry.init({
+  dsn: process.env.SENTRY_DSN, // Add this to your .env file
+  integrations: [
+    new Sentry.Integrations.Http({ tracing: true }),
+    new Sentry.Integrations.Express({ app }),
+  ],
+  tracesSampleRate: 1.0,
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(Sentry.Handlers.requestHandler());
+app.use(Sentry.Handlers.tracingHandler());
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
@@ -53,27 +70,33 @@ app.use("/api/admin/tax", adminTaxRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/pools", poolRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/admin/users", adminUserRoutes);
+app.use("/api/admin/affiliates", adminAffiliateRoutes);
 
 // Root route
 app.get("/", (req: Request, res: Response) => {
   res.json({ message: "Gruppy Backend API is running 🚀" });
 });
 
+app.use(Sentry.Handlers.errorHandler());
+
 // Start server
 app.listen(PORT, async () => {
   try {
     await prisma.$connect();
-    console.log("✅ Connected to PostgreSQL");
+    logger.info("✅ Connected to PostgreSQL"); // ✨ REPLACE console.log
 
     await redis.ping();
-    console.log("✅ Connected to Redis");
+    logger.info("✅ Connected to Redis"); // ✨ REPLACE console.log
 
-    // ✨ NEW: Start the scheduled jobs when the server starts
     startJobs();
+    logger.info("⏰ Cron jobs scheduled successfully."); // ✨ REPLACE console.log
 
   } catch (err) {
-    console.error("❌ Startup connection error:", err);
+    logger.error("❌ Startup connection error:", err); // ✨ REPLACE console.error
+    Sentry.captureException(err); // ✨ CAPTURE STARTUP ERRORS
   }
 
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  logger.info(`🚀 Server running at http://localhost:${PORT}`); // ✨ REPLACE console.log
 });

@@ -34,9 +34,6 @@ export async function createPool(req: Request, res: Response) {
       createdById,
     } = req.body;
 
-    if (!title || !productId || !pricePerUnit || !targetQuantity || !deadline || !createdById) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
 
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return res.status(404).json({ error: "Product not found" });

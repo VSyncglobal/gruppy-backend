@@ -7,30 +7,23 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt";
 
-// The register function remains unchanged as it is already aligned with the blueprint
+// This is the simplified 'register' function. The rest of the file stays the same.
+
 export const register = async (req: Request, res: Response) => {
   try {
+    // ✨ All this validation is now handled by the Zod middleware!
+    // We can safely assume the data is in the correct format.
     let { name, email, password, role } = req.body;
-
-    if (!email || !password || !name) {
-      return res
-        .status(400)
-        .json({ error: "Name, email and password are required" });
-    }
+    
     email = email.toLowerCase();
-    const passwordPolicy =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordPolicy.test(password)) {
-      return res.status(400).json({
-        error:
-          "Password must be at least 8 characters long, include upper and lowercase letters, a number, and a special character.",
-      });
-    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return res.status(400).json({ error: "Email already in use" });
+      return res.status(409).json({ error: "Email already in use" }); // 409 Conflict is more specific
     }
+    
     const hashedPassword = await bcrypt.hash(password, 10);
+    
     const user = await prisma.user.create({
       data: {
         name,
@@ -39,7 +32,11 @@ export const register = async (req: Request, res: Response) => {
         role: role || "CONSUMER",
       },
     });
-    res.json({ success: true, user: { id: user.id, email: user.email } });
+
+    // Don't send back the full user object
+    const userResponse = { id: user.id, name: user.name, email: user.email, role: user.role };
+
+    res.status(201).json({ success: true, user: userResponse });
   } catch (error) {
     console.error("Registration error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -50,9 +47,7 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   try {
     let { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
-    }
+  
     email = email.toLowerCase();
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {

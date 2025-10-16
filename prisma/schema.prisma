@@ -31,6 +31,7 @@ enum PaymentStatus {
   SUCCESS
   FAILED
 }
+
 enum DeletionEntityType {
   PAYMENT
   POOL_MEMBER
@@ -297,13 +298,14 @@ model PoolMember {
 model DeletionLog {
   id         String             @id @default(cuid())
   entityType DeletionEntityType // What kind of record was deleted (e.g., PAYMENT)
-  entityId   String             // The ID of the deleted record
-  reason     String             // Why it was deleted (e.g., "Expired pending payment")
-  metadata   Json?              // Optional: To store extra context
+  entityId   String // The ID of the deleted record
+  reason     String // Why it was deleted (e.g., "Expired pending payment")
+  metadata   Json? // Optional: To store extra context
   deletedAt  DateTime           @default(now())
 
   @@index([entityType, entityId])
 }
+
 //////////////////////
 // PHASE 2: PROFIT & ADMIN EARNINGS
 //////////////////////

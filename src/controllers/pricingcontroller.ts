@@ -9,23 +9,21 @@ import { AuthRequest } from "../middleware/auth";
 // ========================
 // 1️⃣ PRICE CALCULATION (FIXED)
 // ========================
+// ... (imports)
+
 export async function calculatePricing(req: AuthRequest, res: Response) {
   try {
-    // ✅ FIX: Added hsCode and route to be extracted from the body
+    // Validation is now handled by the Zod middleware
     const { basePrice, distanceKm, weightKg, affiliateId, hsCode, route } = req.body;
-
-    if (!basePrice || !distanceKm || !weightKg || !hsCode || !route) {
-      return res.status(400).json({ error: "Missing required fields: basePrice, distanceKm, weightKg, hsCode, and route are all required." });
-    }
 
     const result = await calculatePrice({
       basePrice: Number(basePrice),
       distanceKm: Number(distanceKm),
       weightKg: Number(weightKg),
       affiliateId,
-      hsCode, // ✅ FIX: Pass hsCode to the service
-      route,   // ✅ FIX: Pass route to the service
-      userId: req.user?.id, // ✅ FIX: Correctly access userId from token
+      hsCode,
+      route,
+      userId: req.user?.id,
     });
 
     res.json({ success: true, data: result });
@@ -34,6 +32,8 @@ export async function calculatePricing(req: AuthRequest, res: Response) {
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
+
+// ... (getPricingLogs function remains the same)
 
 // ... the rest of your file (getPricingLogs function) remains the same
 // ========================
