@@ -2,6 +2,9 @@ import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import { PoolStatus, UserRole } from "@prisma/client";
 import { updatePoolFinance } from "../hooks/poolFinanceHooks";
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
+
 
 // Helper functions can remain as they are good utility functions
 function calculateProfitMargin(baseCost: number, pricePerUnit: number): number {
@@ -72,7 +75,8 @@ export async function createPool(req: Request, res: Response) {
       data: newPool,
     });
   } catch (error) {
-    console.error("❌ Error creating pool:", error);
+    logger.error("Error creating pool:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
@@ -151,9 +155,10 @@ export async function joinPool(req: Request, res: Response) {
       },
     });
   } catch (error: any) {
-    console.error("❌ Error joining pool:", error.message);
+    logger.error("Error joining pool:", { message: error.message, stack: error.stack });
+    Sentry.captureException(error);
     res.status(400).json({ error: error.message || "Failed to join pool" });
-  }
+   }
 }
 
 // The GET functions can remain largely the same, but should fetch from PoolFinance

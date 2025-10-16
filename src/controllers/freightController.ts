@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
 
 // ✅ Create a new freight rate
 export async function createFreightRate(req: Request, res: Response) {
@@ -15,7 +17,8 @@ export async function createFreightRate(req: Request, res: Response) {
 
     res.status(201).json({ success: true, data: freight });
   } catch (error: any) {
-    console.error("Freight creation error:", error);
+    logger.error("Freight creation error:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal server error" });
   }
 }
@@ -44,7 +47,8 @@ export async function updateFreightRate(req: Request, res: Response) {
 
     res.json({ success: true, data: updated });
   } catch (error) {
-    console.error(error);
+    logger.error("Error updating freight rate:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal server error" });
   }
 }

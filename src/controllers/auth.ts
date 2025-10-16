@@ -6,137 +6,125 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "../utils/jwt";
-
-// This is the simplified 'register' function. The rest of the file stays the same.
+import { UserRole } from "@prisma/client";
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
 
 export const register = async (req: Request, res: Response) => {
   try {
-    // ✨ All this validation is now handled by the Zod middleware!
-    // We can safely assume the data is in the correct format.
     let { name, email, password, role } = req.body;
-    
     email = email.toLowerCase();
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return res.status(409).json({ error: "Email already in use" }); // 409 Conflict is more specific
+      return res.status(409).json({ error: "Email already in use" });
     }
-    
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     const user = await prisma.user.create({
       data: {
         name,
         email,
         password_hash: hashedPassword,
-        role: role || "CONSUMER",
+        role: role || UserRole.CONSUMER,
       },
     });
 
-    // Don't send back the full user object
     const userResponse = { id: user.id, name: user.name, email: user.email, role: user.role };
-
     res.status(201).json({ success: true, user: userResponse });
   } catch (error) {
-    console.error("Registration error:", error);
+    logger.error("Registration error:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// The login function is updated to issue both tokens
 export const login = async (req: Request, res: Response) => {
   try {
     let { email, password } = req.body;
-  
     email = email.toLowerCase();
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
+
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // ✅ Generate BOTH tokens
     const accessToken = signAccessToken({ userId: user.id, role: user.role });
     const refreshToken = signRefreshToken({ userId: user.id });
 
-    // 🗓️ Calculate expiry date for the refresh token
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // Set expiry for 7 days from now
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // 💾 Store the refresh token in the database
     await prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: refreshToken, // For simplicity. In a high-security app, you might hash this.
+        token: refreshToken,
         expiresAt,
       },
     });
 
-    // ✅ Return both tokens to the client
     res.json({ success: true, data: { accessToken, refreshToken } });
   } catch (error) {
-    console.error("Login error:", error);
+    logger.error("Login error:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// ✨ NEW: Controller for refreshing the access token
 export const refresh = async (req: Request, res: Response) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) {
-    return res.status(401).json({ error: "Refresh token is required" });
-  }
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+        return res.status(401).json({ error: "Refresh token is required" });
+    }
 
-  const decoded = verifyRefreshToken(refreshToken);
-  if (!decoded) {
-    return res.status(403).json({ error: "Invalid or expired refresh token" });
-  }
+    const decoded = verifyRefreshToken(refreshToken);
+    if (!decoded) {
+        return res.status(403).json({ error: "Invalid or expired refresh token" });
+    }
 
-  // 🛡️ Verify the token exists in our database (it hasn't been revoked/logged out)
-  const dbToken = await prisma.refreshToken.findFirst({
-    where: {
-      userId: decoded.userId,
-      token: refreshToken,
-    },
-  });
+    const dbToken = await prisma.refreshToken.findFirst({
+        where: {
+        userId: decoded.userId,
+        token: refreshToken,
+        },
+    });
 
-  if (!dbToken) {
-    return res
-      .status(403)
-      .json({ error: "Refresh token not found or has been revoked" });
-  }
+    if (!dbToken) {
+        return res
+        .status(403)
+        .json({ error: "Refresh token not found or has been revoked" });
+    }
 
-  // Fetch the user to get their role for the new access token payload
-  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-  if (!user) {
-    return res.status(404).json({ error: "User associated with token not found" });
-  }
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) {
+        return res.status(404).json({ error: "User associated with token not found" });
+    }
 
-  // ✅ Issue a new access token
-  const newAccessToken = signAccessToken({ userId: user.id, role: user.role });
+    const newAccessToken = signAccessToken({ userId: user.id, role: user.role });
 
-  res.json({ success: true, data: { accessToken: newAccessToken } });
+    res.json({ success: true, data: { accessToken: newAccessToken } });
 };
 
-// ✨ NEW: Controller for logging out and invalidating the refresh token
 export const logout = async (req: Request, res: Response) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) {
-    return res.status(400).json({ error: "Refresh token is required" });
-  }
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+        return res.status(400).json({ error: "Refresh token is required" });
+    }
 
-  try {
-    // 🗑️ Delete the refresh token from the database to invalidate it
-    await prisma.refreshToken.deleteMany({
-      where: { token: refreshToken },
-    });
-    res.json({ success: true, message: "Logged out successfully" });
-  } catch (error) {
-    // Fails silently if token doesn't exist, which is acceptable for logout
-    console.error("Logout error:", error);
-    res.json({ success: true, message: "Logged out" });
-  }
+    try {
+        await prisma.refreshToken.deleteMany({
+        where: { token: refreshToken },
+        });
+        res.json({ success: true, message: "Logged out successfully" });
+    } catch (error) {
+        logger.error("Logout error:", error);
+        Sentry.captureException(error);
+        res.json({ success: true, message: "Logged out" });
+    }
 };

@@ -1,19 +1,12 @@
-
-// src/controllers/pricingcontroller.ts
-
-import { Request, Response } from "express";
+import { Response } from "express";
 import { calculatePrice } from "../services/pricingservice";
 import prisma from "../utils/prismaClient";
 import { AuthRequest } from "../middleware/auth";
-
-// ========================
-// 1️⃣ PRICE CALCULATION (FIXED)
-// ========================
-// ... (imports)
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
 
 export async function calculatePricing(req: AuthRequest, res: Response) {
   try {
-    // Validation is now handled by the Zod middleware
     const { basePrice, distanceKm, weightKg, affiliateId, hsCode, route } = req.body;
 
     const result = await calculatePrice({
@@ -28,10 +21,13 @@ export async function calculatePricing(req: AuthRequest, res: Response) {
 
     res.json({ success: true, data: result });
   } catch (error: any) {
-    console.error("Pricing calculation failed:", error);
+    logger.error("Pricing calculation failed:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
+
+
 
 // ... (getPricingLogs function remains the same)
 

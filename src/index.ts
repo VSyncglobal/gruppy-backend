@@ -1,5 +1,8 @@
-import express, { Request, Response } from "express";
-import * as Sentry from "@sentry/node"; // ✨ ADD SENTRY IMPORT
+// ✨ FIX: Import the instrument file at the very top
+import "./instrument"; 
+
+import express, { Request, Response, NextFunction } from "express";
+import * as Sentry from "@sentry/node";
 import logger from "./utils/logger";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -22,45 +25,31 @@ import productRoutes from "./routes/productRoutes";
 import adminUserRoutes from "./routes/adminUserRoutes";
 import adminAffiliateRoutes from "./routes/adminAffiliateRoutes";
 
-
-// ✨ NEW: Import the job scheduler starter
+// Job Scheduler
 import { startJobs } from "./jobs";
 
 dotenv.config();
-// ✨ INITIALIZE SENTRY - MUST BE THE FIRST THING
-Sentry.init({
-  dsn: process.env.SENTRY_DSN, // Add this to your .env file
-  integrations: [
-    new Sentry.Integrations.Http({ tracing: true }),
-    new Sentry.Integrations.Express({ app }),
-  ],
-  tracesSampleRate: 1.0,
-});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(Sentry.Handlers.requestHandler());
-app.use(Sentry.Handlers.tracingHandler());
+// Core Middleware
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
 
-// Rate limiting (100 requests/min)
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 100,
 });
 app.use(limiter);
 
-// Database (Postgres via Prisma)
+// Database and Redis clients
 const prisma = new PrismaClient();
-
-// Redis client
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
-// Routes
+// API Routes
 app.use("/health", healthRouter);
 app.use("/auth", authRouter);
 app.use("/api/pricing", pricingRoutes);
@@ -79,24 +68,33 @@ app.get("/", (req: Request, res: Response) => {
   res.json({ message: "Gruppy Backend API is running 🚀" });
 });
 
-app.use(Sentry.Handlers.errorHandler());
+// ✨ NEW: Sentry verification route from documentation
+app.get("/debug-sentry", function mainHandler(req, res) {
+  throw new Error("My first Sentry error!");
+});
+
+// ✨ FIX: The Sentry error handler must be registered before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
+
+// Optional fallthrough error handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  // The error id is attached to `res.sentry` to be returned
+  // and optionally displayed to the user for support.
+  res.statusCode = 500;
+  res.end((res as any).sentry + "\n");
+});
 
 // Start server
 app.listen(PORT, async () => {
   try {
     await prisma.$connect();
-    logger.info("✅ Connected to PostgreSQL"); // ✨ REPLACE console.log
-
+    logger.info("✅ Connected to PostgreSQL");
     await redis.ping();
-    logger.info("✅ Connected to Redis"); // ✨ REPLACE console.log
-
+    logger.info("✅ Connected to Redis");
     startJobs();
-    logger.info("⏰ Cron jobs scheduled successfully."); // ✨ REPLACE console.log
-
   } catch (err) {
-    logger.error("❌ Startup connection error:", err); // ✨ REPLACE console.error
-    Sentry.captureException(err); // ✨ CAPTURE STARTUP ERRORS
+    logger.error("❌ Startup connection error:", { error: err });
+    Sentry.captureException(err);
   }
-
-  logger.info(`🚀 Server running at http://localhost:${PORT}`); // ✨ REPLACE console.log
+  logger.info(`🚀 Server running at http://localhost:${PORT}`);
 });

@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
 
 const safeNum = (val: any) => (isNaN(parseFloat(val)) ? 0 : parseFloat(val));
 
@@ -49,7 +51,8 @@ export async function addTaxRate(req: Request, res: Response) {
 
     res.json({ success: true, data: rate });
   } catch (error) {
-    console.error("Error adding tax rate:", error);
+    logger.error("Error adding tax rate:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
@@ -66,13 +69,13 @@ export async function updateTaxRate(req: Request, res: Response) {
       effectiveTo,
     } = req.body;
 
-    const updated = await prisma.kRARate.update({
+     const updated = await prisma.kRARate.update({
       where: { id },
       data: {
-        duty_rate: safeNum(dutyRate),
-        rdl_rate: safeNum(rdlRate),
-        idf_rate: safeNum(idfRate),
-        vat_rate: safeNum(vatRate),
+        duty_rate: parseFloat(dutyRate) || 0,
+        rdl_rate: parseFloat(rdlRate) || 0,
+        idf_rate: parseFloat(idfRate) || 0,
+        vat_rate: parseFloat(vatRate) || 0,
         description,
         effectiveTo: effectiveTo ? new Date(effectiveTo) : null,
       },
@@ -80,7 +83,8 @@ export async function updateTaxRate(req: Request, res: Response) {
 
     res.json({ success: true, data: updated });
   } catch (error) {
-    console.error("Error updating tax rate:", error instanceof Error ? error.message : error);
+    logger.error("Error updating tax rate:", error);
+    Sentry.captureException(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
