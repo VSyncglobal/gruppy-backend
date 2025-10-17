@@ -87,6 +87,9 @@ export const initiatePoolPayment = async (req: AuthRequest, res: Response) => {
  * Handles incoming webhook confirmations from payment providers.
  */
 export const handlePaymentWebhook = async (req: Request, res: Response) => {
+  logger.info("WEBHOOK: Received a request on the payment webhook.");
+  logger.debug("WEBHOOK Body:", req.body);  
+  
   const { paymentId, status, transactionDetails } = req.body;
 
   if (!paymentId || !status) {

@@ -34,6 +34,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Core Middleware
+app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
