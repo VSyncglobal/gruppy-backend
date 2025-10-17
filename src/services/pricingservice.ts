@@ -1,5 +1,6 @@
 import prisma from "../utils/prismaClient";
 import { cache } from "../utils/cache";
+import logger from "../utils/logger"; // Use the structured logger
 
 interface PricingInput {
   basePrice: number;
@@ -7,57 +8,48 @@ interface PricingInput {
   weightKg: number;
   affiliateId?: string;
   userId?: string;
-  hsCode?: string;   // for tax calculation
-  route?: string;    // for freight lookup
+  hsCode: string; // Made non-optional for clarity
+  route: string;  // Made non-optional for clarity
 }
 
 export async function calculatePrice(input: PricingInput) {
-  // ✅ Build cache key
-  const cacheKey = `pricing:${input.basePrice}:${input.distanceKm}:${input.weightKg}:${input.route || "none"}:${input.hsCode || "none"}`;
+  const cacheKey = `pricing:${input.basePrice}:${input.distanceKm}:${input.weightKg}:${input.route}:${input.hsCode}`;
   const cached = await cache.get(cacheKey);
   if (cached) {
-    console.log("💾 Returning cached pricing result");
+    logger.info("💾 Returning cached pricing result");
     return cached;
   }
 
-  // ✅ Freight Rate Lookup
-  let freightRatePerKg = 0;
-  if (input.route) {
-    const freight = await prisma.freightRate.findFirst({
-      where: {
-        route: { equals: input.route, mode: "insensitive" },
+  // ✨ LOG THE INCOMING REQUEST FOR ANALYTICS
+  const pricingRequestLog = await prisma.pricingRequest.create({
+      data: {
+          userId: input.userId,
+          payload: input as any, // Store the raw input payload
       },
-    });
-    console.log("🚚 Freight query input:", input.route);
-    console.log("🚚 Freight record found:", freight);
-    if (freight) freightRatePerKg = freight.ratePerKg;
-  }
+  });
 
-  // ✅ Tax Lookup (KRA)
-  let duty_rate = 0, rdl_rate = 0, idf_rate = 0, vat_rate = 0;
-  if (input.hsCode) {
-    const now = new Date();
-    const taxRecord = await prisma.kRARate.findFirst({
-      where: {
-        hsCode: input.hsCode,
-        effectiveFrom: { lte: now },
-        OR: [{ effectiveTo: { gte: now } }, { effectiveTo: null }],
-      },
-      orderBy: { effectiveFrom: "desc" },
-    });
-    console.log("💰 Tax query input:", input.hsCode);
-    console.log("💰 Tax record found:", taxRecord);
+  // --- All existing calculation logic remains the same ---
 
+  const freight = await prisma.freightRate.findFirst({
+    where: { route: { equals: input.route, mode: "insensitive" } },
+  });
+  const freightRatePerKg = freight?.ratePerKg || 0;
 
-    if (taxRecord) {
-      duty_rate = taxRecord.duty_rate || 0;
-      rdl_rate = taxRecord.rdl_rate || 0;
-      idf_rate = taxRecord.idf_rate || 0;
-      vat_rate = taxRecord.vat_rate || 0;
-    }
-  }
+  const now = new Date();
+  const taxRecord = await prisma.kRARate.findFirst({
+    where: {
+      hsCode: input.hsCode,
+      effectiveFrom: { lte: now },
+      OR: [{ effectiveTo: { gte: now } }, { effectiveTo: null }],
+    },
+    orderBy: { effectiveFrom: "desc" },
+  });
 
-  // ✅ Commission Lookup (Affiliate)
+  const duty_rate = taxRecord?.duty_rate || 0;
+  const rdl_rate = taxRecord?.rdl_rate || 0;
+  const idf_rate = taxRecord?.idf_rate || 0;
+  const vat_rate = taxRecord?.vat_rate || 0;
+
   let commissionRate = 0;
   if (input.affiliateId) {
     const affiliate = await prisma.affiliate.findUnique({
@@ -66,23 +58,20 @@ export async function calculatePrice(input: PricingInput) {
     commissionRate = affiliate ? affiliate.commissionRate : 0;
   }
 
-  // ✅ Base Calculations
   const freightCost = input.weightKg * freightRatePerKg;
-  const distanceCost = input.distanceKm * 0.5;
+  const distanceCost = input.distanceKm * 0.5; // This factor can be configured later
   const subtotal = input.basePrice + freightCost + distanceCost;
-
-  // ✅ Taxes Sequentially
   const duty = subtotal * duty_rate;
   const rdl = subtotal * rdl_rate;
   const idf = subtotal * idf_rate;
   const vat = (subtotal + duty + rdl + idf) * vat_rate;
   const totalTaxes = duty + rdl + idf + vat;
-
-  // ✅ Commission & Final
   const commission = subtotal * commissionRate;
   const finalPrice = subtotal + totalTaxes - commission;
 
-  // ✅ Persist Log
+  // --- End of calculation logic ---
+
+  // Persist the detailed audit log as before
   await prisma.priceCalculationLog.create({
     data: {
       userId: input.userId,
@@ -96,8 +85,9 @@ export async function calculatePrice(input: PricingInput) {
       rdl_rate,
       idf_rate,
       vat_rate,
-      taxesTotal: totalTaxes,   // ✅ FIXED NAME
+      taxesTotal:totalTaxes,
       freightRate: freightRatePerKg,
+      commission,
     },
   });
 
@@ -115,10 +105,17 @@ export async function calculatePrice(input: PricingInput) {
     commission,
     finalPrice,
   };
+  
+  // ✨ UPDATE THE ANALYTICS LOG WITH THE FINAL RESULT
+  await prisma.pricingRequest.update({
+      where: { id: pricingRequestLog.id },
+      data: { result: result as any },
+  });
 
   await cache.set(cacheKey, result, 3600);
-  console.log("🧮 Cached new pricing result");
+  logger.info("🧮 Cached new pricing result");
   return result;
 }
 
-export {}; // ✅ Marks file as a module
+// Keep this export to ensure the file is treated as a module
+export {};
