@@ -8,7 +8,13 @@
 -- AlterEnum
 BEGIN;
 CREATE TYPE "PoolStatus_new" AS ENUM ('FILLING', 'CLOSED', 'SHIPPING', 'READY_FOR_PICKUP', 'DELIVERED', 'CANCELLED');
-ALTER TABLE "public"."Pool" ALTER COLUMN "status" DROP DEFAULT;
+ALTER TABLE "public"."Pool" ALTEALTER TABLE "Pool" ALTER COLUMN "status" TYPE "PoolStatus_new" USING
+  CASE "status"::text
+    WHEN 'OPEN' THEN 'FILLING'
+    WHEN 'FILLED' THEN 'CLOSED'
+    WHEN 'READY_TO_SHIP' THEN 'SHIPPING'
+    ELSE "status"::text::"PoolStatus_new"
+  END;R COLUMN "status" DROP DEFAULT;
 ALTER TABLE "Pool" ALTER COLUMN "status" TYPE "PoolStatus_new" USING ("status"::text::"PoolStatus_new");
 ALTER TYPE "PoolStatus" RENAME TO "PoolStatus_old";
 ALTER TYPE "PoolStatus_new" RENAME TO "PoolStatus";
