@@ -1,266 +1,33 @@
-generator client {
-  provider = "prisma-client-js"
-}
+// This is your Prisma schema.
+// It is the source of truth for your database.
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id              String                @id @default(cuid())
-  name            String
-  email           String                @unique
-  password_hash   String
-  role            UserRole              @default(CONSUMER)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  affiliate       Affiliate?
-  orders          Order[]
-  createdPools    Pool[]                @relation("CreatedPools")
-  poolMemberships PoolMember[]
-  pricingLogs     PriceCalculationLog[] @relation("UserPriceCalcLogs")
-  PricingLog      PricingLog[]
-  pricingRequests PricingRequest[]
-  refreshTokens   RefreshToken[]
+generator client {
+  provider = "prisma-client-js"
 }
 
-model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
-}
-
-model Affiliate {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  code           String   @unique
-  commissionRate Float    @default(0.05)
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id])
-}
-
-model Payment {
-  id                   String        @id @default(cuid())
-  orderId              String?
-  amount               Float
-  status               PaymentStatus @default(PENDING)
-  method               String
-  mpesa_receipt_number String?
-  transaction_date     DateTime?
-  metadata             Json?
-  createdAt            DateTime      @default(now())
-  order                Order?        @relation(fields: [orderId], references: [id])
-  poolMember           PoolMember?   @relation("PaymentToPoolMember")
-
-  @@index([orderId])
-}
-
-model Product {
-  id        String   @id @default(cuid())
-  name      String
-  hsCode    String
-  basePrice Float
-  createdAt DateTime @default(now())
-  orders    Order[]
-  pools     Pool[]
-}
-
-model FreightRate {
-  id        String   @id @default(cuid())
-  route     String   @unique
-  ratePerKg Float
-  createdAt DateTime @default(now())
-}
-
-model KRARate {
-  id            String    @id @default(cuid())
-  hsCode        String
-  duty_rate     Float     @default(0)
-  rdl_rate      Float     @default(0)
-  idf_rate      Float     @default(0)
-  vat_rate      Float     @default(0)
-  description   String?
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  createdAt     DateTime  @default(now())
-
-  @@unique([hsCode, effectiveFrom])
-  @@index([hsCode])
-}
-
-model PriceCalculationLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  basePrice   Float
-  distanceKm  Float
-  weightKg    Float
-  route       String?
-  hsCode      String?
-  freightRate Float?
-  duty_rate   Float?
-  rdl_rate    Float?
-  idf_rate    Float?
-  vat_rate    Float?
-  taxesTotal  Float?
-  commission  Float?
-  finalPrice  Float
-  createdAt   DateTime @default(now())
-  user        User?    @relation("UserPriceCalcLogs", fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([hsCode])
-  @@index([route])
-}
-
-model PricingRequest {
-  id        String   @id @default(cuid())
-  userId    String?
-  payload   Json
-  result    Json?
-  createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id])
-}
-
-model Order {
-  id              String               @id @default(cuid())
-  order_number    String               @unique
-  userId          String
-  productId       String
-  status          OrderStatus          @default(PENDING_PAYMENT)
-  final_price_ksh Float?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  product         Product              @relation(fields: [productId], references: [id])
-  user            User                 @relation(fields: [userId], references: [id])
-  statusHistory   OrderStatusHistory[]
-  payments        Payment[]
-
-  @@index([userId])
-  @@index([order_number])
-}
-
-model OrderStatusHistory {
-  id         String      @id @default(cuid())
-  orderId    String
-  fromStatus OrderStatus
-  toStatus   OrderStatus
-  note       String?
-  createdAt  DateTime    @default(now())
-  order      Order       @relation(fields: [orderId], references: [id])
-
-  @@index([orderId])
-}
-
-model PricingLog {
-  id         String   @id @default(cuid())
-  basePrice  Float
-  distanceKm Float
-  weightKg   Float
-  finalPrice Float
-  userId     String?
-  createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id])
-}
-
-model Pool {
-  id              String       @id @default(cuid())
-  title           String
-  description     String?
-  productId       String
-  pricePerUnit    Float
-  targetQuantity  Int
-  currentQuantity Int          @default(0)
-  deadline        DateTime
-  status          PoolStatus   @default(OPEN)
-  createdById     String
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  minJoiners      Int          @default(1)
-  cumulativeValue Float?       @default(0)
-  profitMargin    Float?
-  progress        Float?       @default(0)
-  creator         User         @relation("CreatedPools", fields: [createdById], references: [id])
-  product         Product      @relation(fields: [productId], references: [id])
-  finance         PoolFinance? @relation("PoolToFinance")
-  members         PoolMember[]
-
-  @@index([status])
-  @@index([createdById])
-  @@index([productId])
-}
-
-model PoolFinance {
-  id              String          @id @default(cuid())
-  poolId          String          @unique
-  baseCostPerUnit Float
-  logisticCost    Float?          @default(0)
-  totalRevenue    Float?          @default(0)
-  totalCost       Float?          @default(0)
-  grossProfit     Float?          @default(0)
-  platformFee     Float?          @default(0.05)
-  platformEarning Float?          @default(0)
-  memberSavings   Float?          @default(0)
-  isFinalized     Boolean         @default(false)
-  finalizedAt     DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  AdminEarnings   AdminEarnings[]
-  pool            Pool            @relation("PoolToFinance", fields: [poolId], references: [id])
-}
-
-model PoolMember {
-  id        String   @id @default(cuid())
-  poolId    String
-  userId    String
-  quantity  Int      @default(1)
-  paymentId String?  @unique
-  joinedAt  DateTime @default(now())
-  payment   Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id])
-  pool      Pool     @relation(fields: [poolId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
-
-  @@index([poolId])
-  @@index([userId])
-}
-
-model DeletionLog {
-  id         String             @id @default(cuid())
-  entityType DeletionEntityType
-  entityId   String
-  reason     String
-  metadata   Json?
-  deletedAt  DateTime           @default(now())
-
-  @@index([entityType, entityId])
-}
-
-model AdminEarnings {
-  id            String      @id @default(cuid())
-  poolFinanceId String
-  amount        Float
-  description   String?
-  createdAt     DateTime    @default(now())
-  poolFinance   PoolFinance @relation(fields: [poolFinanceId], references: [id])
-
-  @@index([poolFinanceId])
-}
+// ==================
+// ENUMS
+// ==================
 
 enum UserRole {
+  CONSUMER
   ADMIN
   AFFILIATE
-  CONSUMER
 }
 
-enum OrderStatus {
-  PENDING_PAYMENT
-  PAYMENT_CONFIRMED
-  SOURCING
-  IN_TRANSIT
+enum PoolStatus {
+  DRAFT
+  FILLING
+  READY_TO_SHIP
+  SHIPPING
+  ARRIVED
   DELIVERED
+  CLOSED
   CANCELLED
 }
 
@@ -268,17 +35,223 @@ enum PaymentStatus {
   PENDING
   SUCCESS
   FAILED
-}
-
-enum DeletionEntityType {
-  PAYMENT
-  POOL_MEMBER
-}
-
-enum PoolStatus {
-  OPEN
-  FILLED
-  READY_TO_SHIP
-  CLOSED
   CANCELLED
+  REFUNDED
+}
+
+// ==================
+// MODELS
+// ==================
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  password_hash String
+  role          UserRole       @default(CONSUMER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshToken  RefreshToken?
+  poolsCreated  Pool[]         @relation("CreatedBy")
+  poolMembers   PoolMember[]
+  payments      Payment[]
+  calcLogs      PriceCalculationLog[]
+  affiliate     Affiliate?
+  reviews       Review[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  hsCode          String
+  basePrice       Float // Base price in KES
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  pools           Pool[]
+  
+  // ✅ --- THIS IS THE MISSING COLUMN ---
+  categoryId      String?  @map("category_id")
+  subcategoryId   String?  @map("subcategory_id")
+  category        Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory     Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  reviews         Review[]
+}
+
+model Category {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  products      Product[]
+  subcategories Subcategory[]
+  createdAt     DateTime @default(now())
+}
+
+model Subcategory {
+  id         String   @id @default(cuid())
+  name       String
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products   Product[]
+  createdAt  DateTime @default(now())
+
+  @@unique([name, categoryId])
+}
+
+model Pool {
+  id              String       @id @default(cuid())
+  title           String
+  description     String?
+  // ✅ --- THIS IS THE MISSING COLUMN ---
+  imageUrl        String?      @map("image_url")
+  
+  pricePerUnit    Float // Final price in KES for the user
+  targetQuantity  Int
+  currentQuantity Int          @default(0)
+  progress        Float        @default(0) // 0.0 to 100.0
+  deadline        DateTime
+  status          PoolStatus   @default(FILLING)
+  
+  createdById     String
+  creator         User         @relation("CreatedBy", fields: [createdById], references: [id])
+  
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id])
+  
+  members         PoolMember[]
+  finance         PoolFinance?
+  reviews         Review[]
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model PoolMember {
+  id         String   @id @default(cuid())
+  poolId     String
+  pool       Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quantity   Int
+  payment    Payment?
+  joinedAt   DateTime @default(now())
+
+  @@unique([poolId, userId]) // User can only join a pool once
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id])
+  poolMemberId      String?       @unique @map("pool_member_id") // Optional: Can be null if not a pool payment
+  poolMember        PoolMember?   @relation(fields: [poolMemberId], references: [id], onDelete: SetNull)
+  
+  amount            Float
+  method            String // e.g., "MPESA"
+  status            PaymentStatus @default(PENDING)
+  checkoutRequestID String?       @unique @map("checkout_request_id")
+  mpesaReceiptCode  String?       @unique @map("mpesa_receipt_code")
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model PoolFinance {
+  id                 String   @id @default(cuid())
+  poolId             String   @unique
+  pool               Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  
+  baseCostPerUnit    Float    // The actual cost in KES
+  totalBaseCost      Float    // baseCost * targetQuantity
+  totalRevenue       Float    // pricePerUnit * currentQuantity
+  projectedProfit    Float
+  actualProfit       Float?
+  memberSavings      Float    // Avg savings per user
+  
+  isFinalized        Boolean  @default(false)
+  
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model KraTaxRate {
+  id            String   @id @default(cuid())
+  hsCode        String   @unique
+  description   String?
+  duty_rate     Float    @default(0)
+  rdl_rate      Float    @default(0.015)
+  idf_rate      Float    @default(0.025)
+  vat_rate      Float    @default(0.16)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime @default(now())
+}
+
+model FreightRate {
+  id        String   @id @default(cuid())
+  route     String   @unique // e.g., "China-Mombasa Sea"
+  ratePerKg Float    // Rate in KES
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PriceCalculationLog {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  
+  basePrice      Float
+  currency       String   @default("KES")
+  weightKg       Float
+  hsCode         String
+  route          String
+  
+  calculatedCost Float
+  freightCost    Float
+  totalTaxes     Float
+  
+  createdAt      DateTime @default(now())
+}
+
+model Affiliate {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  code            String   @unique
+  commissionRate  Float    @default(0.05) // 5%
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  
+  poolId    String?
+  pool      Pool?    @relation(fields: [poolId], references: [id])
+  
+  createdAt DateTime @default(now())
+}
+
+model DeletionLog {
+  id          String   @id @default(cuid())
+  entityType  String   // e.g., "Pool", "User"
+  entityId    String
+  deletedAt   DateTime @default(now())
+  deletedDataJson String
 }
