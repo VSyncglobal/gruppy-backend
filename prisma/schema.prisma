@@ -1,5 +1,5 @@
-// This is the correct schema.prisma file content.
-// Copy this and paste it into your local prisma/schema.prisma file.
+// This is the FINAL CORRECTED schema.prisma file.
+// I have added 'payments Payment[]' to the User model.
 
 generator client {
   provider = "prisma-client-js"
@@ -27,6 +27,9 @@ model User {
   pricingRequests PricingRequest[]
   refreshTokens   RefreshToken[]
   reviews         Review[]
+  payments        Payment[] // <-- THIS IS THE FIX
+
+  @@index([email]) // Added for query optimization
 }
 
 model RefreshToken {
@@ -51,11 +54,11 @@ model Affiliate {
 
 model Payment {
   id                    String        @id @default(cuid())
-  userId                String // New: To link payment to user directly
+  userId                String
   amount                Float
   status                PaymentStatus @default(PENDING)
   method                String
-  providerTransactionId String? // New: Replaces mpesa_receipt_number
+  providerTransactionId String?
   transaction_date      DateTime?
   metadata              Json?
   createdAt             DateTime      @default(now())
@@ -63,8 +66,8 @@ model Payment {
 
   user       User         @relation(fields: [userId], references: [id])
   poolMember PoolMember?  @relation("PaymentToPoolMember")
-  order      Order?       @relation(fields: [orderId], references: [id]) // For future use
-  orderId    String?      @unique // For future use
+  order      Order?       @relation(fields: [orderId], references: [id])
+  orderId    String?      @unique
 
   @@index([userId])
   @@index([status])
@@ -74,11 +77,11 @@ model Product {
   id            String   @id @default(cuid())
   name          String
   hsCode        String
-  basePrice     Float // Note: This might be deprecated if price is per-pool
+  basePrice     Float
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  categoryId    String // New
-  subcategoryId String // New
+  categoryId    String
+  subcategoryId String
 
   category    Category    @relation(fields: [categoryId], references: [id])
   subcategory Subcategory @relation(fields: [subcategoryId], references: [id])
@@ -111,8 +114,8 @@ model Subcategory {
 
 model FreightRate {
   id        String   @id @default(cuid())
-  route     String   @unique // e.g., "China-Mombasa Sea"
-  ratePerKg Float // Price in KSH per KG
+  route     String   @unique
+  ratePerKg Float
   createdAt DateTime @default(now())
 }
 
@@ -164,7 +167,6 @@ model PricingRequest {
   user      User?    @relation(fields: [userId], references: [id])
 }
 
-// Future model, not fully implemented
 model Order {
   id              String        @id @default(cuid())
   order_number    String        @unique
@@ -199,13 +201,13 @@ model Pool {
   id              String     @id @default(cuid())
   title           String
   description     String?
-  imageUrl        String? // New
+  imageUrl        String?
   productId       String
-  pricePerUnit    Float // Final KSH price per unit
+  pricePerUnit    Float
   targetQuantity  Int
   currentQuantity Int        @default(0)
   deadline        DateTime
-  status          PoolStatus @default(FILLING) // New: FILLING is default
+  status          PoolStatus @default(FILLING)
   createdById     String
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
@@ -228,14 +230,14 @@ model Pool {
 model PoolFinance {
   id              String   @id @default(cuid())
   poolId          String   @unique
-  baseCostPerUnit Float // The raw cost before any fees
+  baseCostPerUnit Float
   logisticCost    Float?   @default(0)
-  totalBaseCost   Float?   @default(0) // baseCostPerUnit * targetQuantity
-  totalRevenue    Float?   @default(0) // pricePerUnit * targetQuantity
-  projectedProfit Float?   @default(0) // totalRevenue - totalBaseCost - logisticCost
+  totalBaseCost   Float?   @default(0)
+  totalRevenue    Float?   @default(0)
+  projectedProfit Float?   @default(0)
   platformFee     Float?   @default(0.05)
   platformEarning Float?   @default(0)
-  memberSavings   Float?   @default(0) // (MarketPrice - pricePerUnit) * quantity
+  memberSavings   Float?   @default(0)
   isFinalized     Boolean  @default(false)
   finalizedAt     DateTime?
   createdAt       DateTime @default(now())
@@ -250,7 +252,7 @@ model PoolMember {
   poolId    String
   userId    String
   quantity  Int      @default(1)
-  status    String   @default("PAYMENT_PENDING") // e.g., PAYMENT_PENDING, PAID, REVIEWED
+  status    String   @default("PAYMENT_PENDING")
   paymentId String?  @unique
   joinedAt  DateTime @default(now())
 
@@ -270,7 +272,7 @@ model Review {
   userId     String
   productId  String
   poolId     String
-  poolMemberId String? @unique // Link to the specific membership being reviewed
+  poolMemberId String? @unique
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -333,10 +335,10 @@ enum DeletionEntityType {
 }
 
 enum PoolStatus {
-  FILLING // New: Replaces OPEN
+  FILLING
   READY_TO_SHIP
-  SHIPPING // New
-  DELIVERED // New
+  SHIPPING
+  DELIVERED
   CLOSED
   CANCELLED
 }
