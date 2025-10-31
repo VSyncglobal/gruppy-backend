@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE "Pool" ADD COLUMN     "minJoiners" INTEGER NOT NULL DEFAULT 1;
