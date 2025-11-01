@@ -1,6 +1,16 @@
 // src/schemas/adminSchemas.ts
 import { z } from "zod";
 
+// --- NEW SCHEMA ---
+export const globalSettingSchema = z.object({
+  body: z.object({
+    key: z.string().min(3, { message: "Setting key is required" }).toUpperCase(),
+    value: z.string().min(1, { message: "Setting value is required" }),
+    notes: z.string().optional(),
+  }),
+});
+// --- END NEW SCHEMA ---
+
 // --- REPLACED 'freightRateSchema' with 'logisticsRouteSchema' ---
 export const logisticsRouteSchema = z.object({
   body: z.object({
@@ -20,10 +30,10 @@ export const logisticsRouteSchema = z.object({
 export const kraRateSchema = z.object({
   body: z.object({
     hsCode: z.string().min(4, { message: "A valid HS Code is required" }),
-    duty_rate: z.number().nonnegative(), // --- MODIFIED: Renamed from dutyRate to match schema ---
-    rdl_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from rdlRate to match schema ---
-    idf_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from idfRate to match schema ---
-    vat_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from vatRate to match schema ---
+    duty_rate: z.number().nonnegative(),
+    rdl_rate: z.number().nonnegative(),
+    idf_rate: z.number().nonnegative(),
+    vat_rate: z.number().nonnegative(),
     description: z.string().optional(),
     effectiveFrom: z.string().datetime({ message: "Effective date must be a valid ISO date string" }),
   }),

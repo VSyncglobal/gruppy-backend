@@ -30,7 +30,7 @@ import adminUserRoutes from './routes/adminUserRoutes';
 import adminAffiliateRoutes from './routes/adminAffiliateRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import aiRoutes from './routes/aiRoutes';
-
+import adminGlobalSettingsRoutes from './routes/adminGlobalSettingsRoutes';
 // Job Scheduler
 import { startJobs } from './jobs';
 
@@ -95,7 +95,7 @@ app.use('/api/admin/affiliates', adminAffiliateRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/ai', aiRoutes);
-
+app.use('/api/admin/settings', adminGlobalSettingsRoutes);
 // Root route
 app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'Gruppy Backend API is running 🚀' });
