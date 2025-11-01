@@ -13,6 +13,9 @@ CREATE TYPE "DeletionEntityType" AS ENUM ('PAYMENT', 'POOL_MEMBER');
 -- CreateEnum
 CREATE TYPE "PoolStatus" AS ENUM ('FILLING', 'CLOSED', 'SHIPPING', 'READY_FOR_PICKUP', 'DELIVERED', 'CANCELLED');
 
+-- CreateEnum
+CREATE TYPE "PaymentMethod" AS ENUM ('MPESA', 'STRIPE', 'AIRTEL_MONEY');
+
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
@@ -54,8 +57,8 @@ CREATE TABLE "Payment" (
     "orderId" TEXT,
     "amount" DOUBLE PRECISION NOT NULL,
     "status" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
-    "method" TEXT NOT NULL,
-    "mpesa_receipt_number" TEXT,
+    "method" "PaymentMethod" NOT NULL,
+    "providerConfirmationCode" TEXT,
     "providerTransactionId" TEXT,
     "transaction_date" TIMESTAMP(3),
     "metadata" JSONB,
@@ -70,21 +73,30 @@ CREATE TABLE "Product" (
     "name" TEXT NOT NULL,
     "hsCode" TEXT NOT NULL,
     "basePrice" DOUBLE PRECISION NOT NULL,
+    "benchmarkPrice" DOUBLE PRECISION NOT NULL,
+    "weightKg" DOUBLE PRECISION NOT NULL,
+    "defaultRoute" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "categoryId" TEXT,
-    "subcategoryId" TEXT,
+    "subcategoryId" TEXT NOT NULL,
 
     CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "FreightRate" (
+CREATE TABLE "LogisticsRoute" (
     "id" TEXT NOT NULL,
-    "route" TEXT NOT NULL,
-    "ratePerKg" DOUBLE PRECISION NOT NULL,
+    "name" TEXT NOT NULL,
+    "seaFreightCost" DOUBLE PRECISION NOT NULL,
+    "originCharges" DOUBLE PRECISION NOT NULL,
+    "portChargesMombasa" DOUBLE PRECISION NOT NULL,
+    "clearingAgentFee" DOUBLE PRECISION NOT NULL,
+    "inlandTransportCost" DOUBLE PRECISION NOT NULL,
+    "containerDeposit" DOUBLE PRECISION NOT NULL,
+    "marineInsuranceRate" DOUBLE PRECISION NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "FreightRate_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "LogisticsRoute_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -203,6 +215,9 @@ CREATE TABLE "PoolFinance" (
     "id" TEXT NOT NULL,
     "poolId" TEXT NOT NULL,
     "baseCostPerUnit" DOUBLE PRECISION NOT NULL,
+    "benchmarkPricePerUnit" DOUBLE PRECISION,
+    "totalFixedCosts" DOUBLE PRECISION,
+    "totalVariableCostPerUnit" DOUBLE PRECISION,
     "logisticCost" DOUBLE PRECISION DEFAULT 0,
     "totalRevenue" DOUBLE PRECISION DEFAULT 0,
     "totalCost" DOUBLE PRECISION DEFAULT 0,
@@ -283,6 +298,30 @@ CREATE TABLE "Review" (
     CONSTRAINT "Review_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "GlobalSetting" (
+    "id" TEXT NOT NULL,
+    "key" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "notes" TEXT,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GlobalSetting_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AiSuggestionLog" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT,
+    "productDescription" TEXT NOT NULL,
+    "hsCode" TEXT NOT NULL,
+    "confidence" TEXT NOT NULL,
+    "reasoning" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AiSuggestionLog_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -302,7 +341,7 @@ CREATE UNIQUE INDEX "Payment_providerTransactionId_key" ON "Payment"("providerTr
 CREATE INDEX "Payment_orderId_idx" ON "Payment"("orderId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FreightRate_route_key" ON "FreightRate"("route");
+CREATE UNIQUE INDEX "LogisticsRoute_name_key" ON "LogisticsRoute"("name");
 
 -- CreateIndex
 CREATE INDEX "KRARate_hsCode_idx" ON "KRARate"("hsCode");
@@ -373,6 +412,15 @@ CREATE INDEX "Review_productId_idx" ON "Review"("productId");
 -- CreateIndex
 CREATE INDEX "Review_poolId_idx" ON "Review"("poolId");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "GlobalSetting_key_key" ON "GlobalSetting"("key");
+
+-- CreateIndex
+CREATE INDEX "AiSuggestionLog_userId_idx" ON "AiSuggestionLog"("userId");
+
+-- CreateIndex
+CREATE INDEX "AiSuggestionLog_hsCode_idx" ON "AiSuggestionLog"("hsCode");
+
 -- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -386,7 +434,7 @@ ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderI
 ALTER TABLE "Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_subcategoryId_fkey" FOREIGN KEY ("subcategoryId") REFERENCES "Subcategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Product" ADD CONSTRAINT "Product_subcategoryId_fkey" FOREIGN KEY ("subcategoryId") REFERENCES "Subcategory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PriceCalculationLog" ADD CONSTRAINT "PriceCalculationLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -438,3 +486,6 @@ ALTER TABLE "Review" ADD CONSTRAINT "Review_productId_fkey" FOREIGN KEY ("produc
 
 -- AddForeignKey
 ALTER TABLE "Review" ADD CONSTRAINT "Review_poolId_fkey" FOREIGN KEY ("poolId") REFERENCES "Pool"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AiSuggestionLog" ADD CONSTRAINT "AiSuggestionLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

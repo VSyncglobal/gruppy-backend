@@ -1,21 +1,29 @@
+// src/schemas/adminSchemas.ts
 import { z } from "zod";
 
-// For creating/updating freight rates
-export const freightRateSchema = z.object({
+// --- REPLACED 'freightRateSchema' with 'logisticsRouteSchema' ---
+export const logisticsRouteSchema = z.object({
   body: z.object({
-    route: z.string().min(3, { message: "Route name is required" }),
-    ratePerKg: z.number().positive({ message: "Rate per Kg must be a positive number" }),
+    name: z.string().min(3, { message: "Route name is required" }),
+    seaFreightCost: z.coerce.number().nonnegative(),
+    originCharges: z.coerce.number().nonnegative(),
+    portChargesMombasa: z.coerce.number().nonnegative(),
+    clearingAgentFee: z.coerce.number().nonnegative(),
+    inlandTransportCost: z.coerce.number().nonnegative(),
+    containerDeposit: z.coerce.number().nonnegative(),
+    marineInsuranceRate: z.coerce.number().min(0, "Rate must be 0 or positive").max(1, "Rate must be a decimal (e.g., 0.01 for 1%)"),
   }),
 });
+
 
 // For creating/updating KRA tax rates
 export const kraRateSchema = z.object({
   body: z.object({
     hsCode: z.string().min(4, { message: "A valid HS Code is required" }),
-    dutyRate: z.number().nonnegative(),
-    rdlRate: z.number().nonnegative(),
-    idfRate: z.number().nonnegative(),
-    vatRate: z.number().nonnegative(),
+    duty_rate: z.number().nonnegative(), // --- MODIFIED: Renamed from dutyRate to match schema ---
+    rdl_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from rdlRate to match schema ---
+    idf_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from idfRate to match schema ---
+    vat_rate: z.number().nonnegative(),  // --- MODIFIED: Renamed from vatRate to match schema ---
     description: z.string().optional(),
     effectiveFrom: z.string().datetime({ message: "Effective date must be a valid ISO date string" }),
   }),

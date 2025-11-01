@@ -39,14 +39,20 @@ enum DeletionEntityType {
   POOL_MEMBER
 }
 
-// ✅ UPDATED: PoolStatus now reflects the full order lifecycle
 enum PoolStatus {
-  FILLING          // Was 'OPEN', open for new members
-  CLOSED           // Target met, order placed with supplier
-  SHIPPING         // Product is in transit from supplier
-  READY_FOR_PICKUP // Arrived, ready for local delivery/pickup
-  DELIVERED        // All members have received their item
+  FILLING
+  CLOSED
+  SHIPPING
+  READY_FOR_PICKUP
+  DELIVERED
   CANCELLED
+}
+
+// --- NEW: PaymentMethod enum as requested ---
+enum PaymentMethod {
+  MPESA
+  STRIPE
+  AIRTEL_MONEY
 }
 
 //////////////////////
@@ -69,13 +75,10 @@ model User {
   pricingRequests PricingRequest[]
   refreshTokens   RefreshToken[]
   PricingLog      PricingLog[]
-
-  // Pool relations
   createdPools    Pool[]       @relation("CreatedPools")
   poolMemberships PoolMember[]
-
-  // ✅ NEW: Relation to reviews
-  reviews Review[]
+  reviews         Review[]
+  aiLogs          AiSuggestionLog[] // --- NEW RELATION ---
 }
 
 model RefreshToken {
@@ -84,8 +87,7 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model Affiliate {
@@ -94,67 +96,95 @@ model Affiliate {
   code           String   @unique
   commissionRate Float    @default(0.05)
   createdAt      DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user           User     @relation(fields: [userId], references: [id])
 }
 
 model Payment {
-  id                   String        @id @default(cuid())
-  orderId              String?
-  amount               Float
-  status               PaymentStatus @default(PENDING)
-  method               String
-  mpesa_receipt_number String?
-  providerTransactionId String?    @unique // ✅ NEW: For universal payment tracking
-  transaction_date     DateTime?
-  metadata             Json?
-  createdAt            DateTime      @default(now())
+  id        String        @id @default(cuid())
+  orderId   String?
+  amount    Float
+  status    PaymentStatus @default(PENDING)
+  
+  // --- MODIFIED: Uses the new enum ---
+  method    PaymentMethod
 
-  // relations
-  order      Order?      @relation(fields: [orderId], references: [id])
-  poolMember PoolMember? @relation("PaymentToPoolMember")
+  // --- RENAMED: 'mpesa_receipt_number' is now generic ---
+  providerConfirmationCode String?     // e.g., M-Pesa Receipt, Stripe Charge ID
+
+  // --- KEPT: This is already generic (e.g., M-Pesa CheckoutRequestID) ---
+  providerTransactionId   String?       @unique 
+  
+  transaction_date      DateTime?
+  
+  // --- KEPT: All provider-specific data (like M-Pesa's full callback) goes here. ---
+  metadata              Json?
+  
+  createdAt             DateTime      @default(now())
+  order                 Order?        @relation(fields: [orderId], references: [id])
+  poolMember            PoolMember?   @relation("PaymentToPoolMember")
 
   @@index([orderId])
 }
+
 
 model Product {
   id        String   @id @default(cuid())
   name      String
   hsCode    String
-  basePrice Float
+  
+  // --- MODIFIED: This is now the NEGOTIATED WHOLESALE (EXW/FOB) price ---
+  basePrice     Float   
+  
+  // --- NEW FIELD: The "AliExpress" or individual benchmark price ---
+  benchmarkPrice Float   
+  
+  // --- NEW FIELD: The weight per unit ---
+  weightKg      Float   
+  
+  // --- NEW FIELD: The default route name, e.g., "China-Mombasa Sea" ---
+  defaultRoute  String   
+
   createdAt DateTime @default(now())
 
   // relations
-  orders Order[]
-  pools  Pool[]
-
-  // ✅ NEW: Category Relations
-  categoryId    String?
-  subcategoryId String?
-  category      Category?    @relation(fields: [categoryId], references: [id])
-  subcategory   Subcategory? @relation(fields: [subcategoryId], references: [id])
-
-  // ✅ NEW: Review Relation
-  reviews Review[]
+  orders      Order[]
+  pools       Pool[]
+  categoryId  String?
+  
+  // --- MODIFIED: This is now mandatory (removed '?') ---
+  subcategoryId String   
+  
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  
+  // --- MODIFIED: This is now mandatory (removed '?') ---
+  subcategory Subcategory @relation(fields: [subcategoryId], references: [id]) 
+  
+  reviews     Review[]
 }
 
-model FreightRate {
-  id        String   @id @default(cuid())
-  route     String // e.g. "China-Mombasa Sea"
-  ratePerKg Float
-  createdAt DateTime @default(now())
-
-  @@unique([route])
+// --- REPLACED 'FreightRate' with 'LogisticsRoute' ---
+model LogisticsRoute {
+  id                    String   @id @default(cuid())
+  name                  String   @unique // e.g., "20-ft Container, Shenzhen to Mombasa"
+  seaFreightCost        Float    // Fixed cost for the container
+  originCharges         Float    // Fixed origin terminal handling, etc.
+  portChargesMombasa    Float    // Fixed destination port charges (KPA, etc.)
+  clearingAgentFee      Float    // Fixed agent fee
+  inlandTransportCost   Float    // Fixed cost from Mombasa to Nairobi
+  containerDeposit      Float    // Refundable deposit
+  marineInsuranceRate   Float    // Per-unit rate, e.g., 0.01 (1%)
+  
+  createdAt             DateTime @default(now())
 }
 
 model KRARate {
   id            String    @id @default(cuid())
   hsCode        String
-  duty_rate     Float     @default(0) // import duty
-  rdl_rate      Float     @default(0) // Railway Development Levy or similar
-  idf_rate      Float     @default(0) // Infrastructure Development Fee
-  vat_rate      Float     @default(0) // VAT
-  description   String?   // human readable notes
+  duty_rate     Float     @default(0)
+  rdl_rate      Float     @default(0)
+  idf_rate      Float     @default(0)
+  vat_rate      Float     @default(0)
+  description   String?
   effectiveFrom DateTime
   effectiveTo   DateTime?
   createdAt     DateTime  @default(now())
@@ -167,12 +197,12 @@ model PriceCalculationLog {
   id          String   @id @default(cuid())
   userId      String?
   basePrice   Float
-  distanceKm  Float
+  distanceKm  Float // This is legacy, but we leave it to avoid breaking changes
   weightKg    Float
-  route       String?  // route used for lookup
-  hsCode      String?  // hsCode used for lookup
-  freightRate Float? // snapshot of ratePerKg used
-  duty_rate   Float?   // snapshot of applied duty
+  route       String?
+  hsCode      String?
+  freightRate Float?
+  duty_rate   Float?
   rdl_rate    Float?
   idf_rate    Float?
   vat_rate    Float?
@@ -180,8 +210,7 @@ model PriceCalculationLog {
   commission  Float?
   finalPrice  Float
   createdAt   DateTime @default(now())
-
-  user User? @relation("UserPriceCalcLogs", fields: [userId], references: [id])
+  user        User?    @relation("UserPriceCalcLogs", fields: [userId], references: [id])
 
   @@index([userId])
   @@index([hsCode])
@@ -189,14 +218,12 @@ model PriceCalculationLog {
 }
 
 model PricingRequest {
-  // optional: store interactive requests (for analytics / debug)
   id        String   @id @default(cuid())
   userId    String?
   payload   Json
   result    Json?
   createdAt DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
 }
 
 model Order {
@@ -225,14 +252,12 @@ model OrderStatusHistory {
   toStatus   OrderStatus
   note       String?
   createdAt  DateTime    @default(now())
-
-  order Order @relation(fields: [orderId], references: [id])
+  order      Order       @relation(fields: [orderId], references: [id])
 
   @@index([orderId])
 }
 
 model PricingLog {
-  // keep if used elsewhere; otherwise optional
   id         String   @id @default(cuid())
   basePrice  Float
   distanceKm Float
@@ -247,27 +272,26 @@ model Pool {
   id              String     @id @default(cuid())
   title           String
   description     String?
-  imageUrl        String?    // ✅ NEW: For product images on landing page
+  imageUrl        String?
   productId       String
   pricePerUnit    Float
   targetQuantity  Int
-  minJoiners      Int        @default(1)
+  minJoiners      Int        @default(1) // --- MODIFIED: This will now be set by the admin setup calculator
   currentQuantity Int        @default(0)
-  profitMargin    Float?     // ✅ calculated automatically from base cost
+  profitMargin    Float?
   progress        Float?     @default(0)
   cumulativeValue Float?     @default(0)
   deadline        DateTime
-  status          PoolStatus @default(FILLING) // ✅ UPDATED: Default to FILLING
+  status          PoolStatus @default(FILLING)
   createdById     String
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  // relations
-  product Product      @relation(fields: [productId], references: [id])
-  creator User         @relation("CreatedPools", fields: [createdById], references: [id])
-  members PoolMember[]
-  finance PoolFinance? @relation("PoolToFinance")
-  reviews Review[]     // ✅ NEW: For pool-specific reviews
+  product      Product      @relation(fields: [productId], references: [id])
+  creator      User         @relation("CreatedPools", fields: [createdById], references: [id])
+  members      PoolMember[]
+  finance      PoolFinance? @relation("PoolToFinance")
+  reviews      Review[]
 
   @@index([status])
   @@index([createdById])
@@ -275,20 +299,28 @@ model Pool {
 }
 
 model PoolFinance {
-  id              String    @id @default(cuid())
-  poolId          String    @unique
-  baseCostPerUnit Float
-  logisticCost    Float?    @default(0)
-  totalRevenue    Float?    @default(0)
-  totalCost       Float?    @default(0)
-  grossProfit     Float?    @default(0)
-  platformFee     Float?    @default(0.05)
-  platformEarning Float?    @default(0)
-  memberSavings   Float?    @default(0)
-  isFinalized     Boolean   @default(false)
-  finalizedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                       String    @id @default(cuid())
+  poolId                   String    @unique
+  baseCostPerUnit          Float // This is the NEGOTIATED WHOLESALE price
+  
+  // --- NEW FIELDS ---
+  benchmarkPricePerUnit    Float?    // The calculated "AliExpress" price for savings
+  totalFixedCosts          Float?    // The total container/shipping/port costs
+  totalVariableCostPerUnit Float?    // The per-unit cost (wholesale + tax + insurance)
+  
+  // --- Legacy fields below (can be deprecated/repurposed later) ---
+  logisticCost             Float?    @default(0) 
+  totalRevenue             Float?    @default(0)
+  totalCost                Float?    @default(0)
+  grossProfit              Float?    @default(0)
+  platformFee              Float?    @default(0.05) 
+  platformEarning          Float?    @default(0)
+  memberSavings            Float?    @default(0)
+  
+  isFinalized              Boolean   @default(false)
+  finalizedAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   pool          Pool            @relation("PoolToFinance", fields: [poolId], references: [id])
   AdminEarnings AdminEarnings[]
@@ -301,10 +333,9 @@ model PoolMember {
   quantity  Int      @default(1)
   paymentId String?  @unique
   joinedAt  DateTime @default(now())
-
-  user    User     @relation(fields: [userId], references: [id])
-  pool    Pool     @relation(fields: [poolId], references: [id])
-  payment Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  pool      Pool     @relation(fields: [poolId], references: [id])
+  payment   Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id])
 
   @@index([poolId])
   @@index([userId])
@@ -312,10 +343,10 @@ model PoolMember {
 
 model DeletionLog {
   id         String             @id @default(cuid())
-  entityType DeletionEntityType // What kind of record was deleted (e.g., PAYMENT)
-  entityId   String // The ID of the deleted record
-  reason     String // Why it was deleted (e.g., "Expired pending payment")
-  metadata   Json?  // Optional: To store extra context
+  entityType DeletionEntityType
+  entityId   String
+  reason     String
+  metadata   Json?
   deletedAt  DateTime           @default(now())
 
   @@index([entityType, entityId])
@@ -327,15 +358,10 @@ model AdminEarnings {
   amount        Float
   description   String?
   createdAt     DateTime @default(now())
-
-  poolFinance PoolFinance @relation(fields: [poolFinanceId], references: [id])
+  poolFinance   PoolFinance @relation(fields: [poolFinanceId], references: [id])
 
   @@index([poolFinanceId])
 }
-
-////////////////////////////////////
-// ✅ NEW MODELS FOR PHASE 1
-////////////////////////////////////
 
 model Category {
   id            String        @id @default(cuid())
@@ -356,20 +382,41 @@ model Subcategory {
 
 model Review {
   id        String   @id @default(cuid())
-  rating    Int // 1-5
+  rating    Int
   comment   String?
   createdAt DateTime @default(now())
-
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-
-  productId String?  // Optional: Review for a base product
+  productId String?
   product   Product? @relation(fields: [productId], references: [id])
-
-  poolId    String?  // Optional: Review for a specific pool
+  poolId    String?
   pool      Pool?    @relation(fields: [poolId], references: [id])
 
   @@index([userId])
   @@index([productId])
   @@index([poolId])
+}
+
+// --- NEW MODEL: GlobalSetting ---
+model GlobalSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique // e.g., "USD_TO_KES_RATE"
+  value     String   // e.g., "143.5"
+  notes     String?
+  updatedAt DateTime @updatedAt
+}
+
+// --- NEW MODEL: AiSuggestionLog ---
+model AiSuggestionLog {
+  id                 String   @id @default(cuid())
+  userId             String?
+  productDescription String
+  hsCode             String
+  confidence         String
+  reasoning          String?
+  createdAt          DateTime @default(now())
+  user               User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([hsCode])
 }

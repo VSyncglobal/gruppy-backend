@@ -2,54 +2,77 @@
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import { initiateSTKPush } from "../services/darajaService";
-import { PaymentStatus } from "@prisma/client";
+import { PaymentStatus, PaymentMethod } from "@prisma/client";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 
+// --- THIS FUNCTION IS NOW REWRITTEN ---
+/**
+ * Initiates a payment for an *existing* PENDING payment record.
+ * This is called *after* a user has already joined a pool.
+ */
 export const createPayment = async (req: Request, res: Response) => {
-  const { amount, phone, method, poolId } = req.body;
+  const { phone, method, paymentId } = req.body;
   const userId = (req as any).user.id;
 
-  if (method.toUpperCase() !== "MPESA") {
-    return res.status(400).json({ success: false, message: "Only MPESA payments are currently supported." });
-  }
-  
-  // ✅ TODO: We need to verify the 'amount'
-  // 1. Find the pool
-  // 2. Get the 'quantity' from the request body (add to schema)
-  // 3. const finalAmount = pool.pricePerUnit * quantity;
-  // 4. if (finalAmount !== amount) { ... throw error }
-  // For now, we trust the 'amount' from the client.
-
   try {
-    // 1. Create a PENDING payment record in our database
-    const payment = await prisma.payment.create({
-      data: {
-        amount,
-        method: method.toUpperCase(),
-        status: PaymentStatus.PENDING,
-        // We will link the poolMember *after* payment is successful
+    // 1. Find the pending payment by its ID
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        poolMember: {
+          select: { userId: true },
+        },
       },
     });
 
-    // 2. Initiate the STK push
-    const stkResponse = await initiateSTKPush(
-      amount,
-      phone,
-      payment.id // Pass our internal paymentId as the AccountReference
-    );
+    // 2. Run security and status checks
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment record not found." });
+    }
+    if (payment.poolMember?.userId !== userId) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not own this payment." });
+    }
+    if (payment.status !== PaymentStatus.PENDING) {
+      return res.status(400).json({ success: false, message: `Payment is not pending. Current status: ${payment.status}` });
+    }
+    if (payment.method !== method) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Payment method mismatch. This payment was created for ${payment.method}, not ${method}.` 
+      });
+    }
 
-    // 3. Send the STK push response back to the client
-    res.status(200).json({
-      success: true,
-      message: "STK push initiated. Please complete the transaction on your phone.",
-      paymentId: payment.id,
-      checkoutRequestID: stkResponse.checkoutRequestID,
-    });
+    // 3. --- Payment Provider Logic ---
+    // We can now use a switch to handle different payment providers
+    switch (method) {
+      case PaymentMethod.MPESA:
+        // Initiate the STK push
+        const stkResponse = await initiateSTKPush(
+          payment.amount,
+          phone,
+          payment.id // Pass our internal paymentId as the AccountReference
+        );
+        
+        return res.status(200).json({
+          success: true,
+          message: "STK push initiated. Please complete the transaction on your phone.",
+          paymentId: payment.id,
+          checkoutRequestID: stkResponse.checkoutRequestID,
+        });
+
+      case PaymentMethod.STRIPE:
+      case PaymentMethod.AIRTEL_MONEY:
+        // TODO: Add logic for other payment providers
+        return res.status(501).json({ success: false, message: "This payment method is not yet implemented." });
+
+      default:
+        return res.status(400).json({ success: false, message: "Invalid payment method." });
+    }
 
   } catch (error: any) {
-    logger.error("Error creating payment:", error);
-    Sentry.captureException(error, { extra: { userId, poolId } });
+    logger.error("Error initiating payment:", error);
+    Sentry.captureException(error, { extra: { userId, paymentId, method } });
     res.status(500).json({ success: false, message: error.message || "Payment initiation failed." });
   }
 };
@@ -58,8 +81,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
   logger.info("M-Pesa Webhook received...");
   const body = req.body;
 
-  // TODO: Add a check for a 'secret' in the query params to verify
-  // that this request is *actually* from Safaricom.
+  // TODO: Verify webhook secret
 
   const { Body: { stkCallback } } = body;
 
@@ -70,12 +92,10 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
 
   const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = stkCallback;
 
-  // Use AccountReference (which is our paymentId) to find the payment
   const paymentId = stkCallback.AccountReference; 
   
   if (!paymentId) {
      logger.error("Webhook received with no AccountReference (paymentId)", stkCallback);
-     // Send 200 to acknowledge receipt so Daraja doesn't retry
      return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 
@@ -89,7 +109,6 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Payment not found" });
     }
 
-    // Don't update an already-processed payment
     if (payment.status !== PaymentStatus.PENDING) {
       logger.warn(`Webhook for already processed payment: ${paymentId}, status: ${payment.status}`);
       return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
@@ -101,44 +120,43 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
       
       const metadata = CallbackMetadata.Item;
       const mpesaReceipt = metadata.find((i: any) => i.Name === "MpesaReceiptNumber")?.Value;
-      const transactionDate = metadata.find((i: any) => i.Name === "TransactionDate")?.Value; // YYYYMMDDHHMMSS
+      const transactionDateStr = metadata.find((i: any) => i.Name === "TransactionDate")?.Value; // YYYYMMDDHHMMSS
+      
+      const transactionDate = transactionDateStr 
+            ? new Date(
+                parseInt(transactionDateStr.slice(0, 4)),  // Year
+                parseInt(transactionDateStr.slice(4, 6)) - 1, // Month (0-indexed)
+                parseInt(transactionDateStr.slice(6, 8)),  // Day
+                parseInt(transactionDateStr.slice(8, 10)), // Hour
+                parseInt(transactionDateStr.slice(10, 12)),// Minute
+                parseInt(transactionDateStr.slice(12, 14)) // Second
+              )
+            : new Date();
 
       await prisma.payment.update({
         where: { id: paymentId },
         data: {
           status: PaymentStatus.SUCCESS,
-          mpesa_receipt_number: mpesaReceipt,
-          // ✅ Use our universal transaction ID
+          providerConfirmationCode: mpesaReceipt,
           providerTransactionId: CheckoutRequestID, 
-          // Parse Daraja's YYYYMMDDHHMMSS format
-          transaction_date: transactionDate 
-            ? new Date(
-                parseInt(transactionDate.slice(0, 4)),  // Year
-                parseInt(transactionDate.slice(4, 6)) - 1, // Month (0-indexed)
-                parseInt(transactionDate.slice(6, 8)),  // Day
-                parseInt(transactionDate.slice(8, 10)), // Hour
-                parseInt(transactionDate.slice(10, 12)),// Minute
-                parseInt(transactionDate.slice(12, 14)) // Second
-              )
-            : new Date(),
-          metadata: metadata, // Store the full callback metadata
+          transaction_date: transactionDate,
+          metadata: metadata,
         },
       });
       
-      // TODO: Emit a socket.io event to the frontend
-      // io.to(payment.userId).emit("paymentSuccess", { paymentId });
-
     } else {
       // --- This is the FAILED case ---
-      // (e.g., user cancelled, auth failed, etc.)
       logger.warn(`Webhook FAILED for payment ${paymentId}: ${ResultDesc}`);
       await prisma.payment.update({
         where: { id: paymentId },
         data: {
           status: PaymentStatus.FAILED,
-          metadata: stkCallback, // Store the error details
+          metadata: stkCallback,
         },
       });
+      
+      // NOTE: We DO NOT trigger the finance hook here.
+      // The cleanup job will handle the deletion and finance update.
     }
 
     // Acknowledge receipt to Safaricom
@@ -147,12 +165,10 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error(`Error processing webhook for payment ${paymentId}:`, error);
     Sentry.captureException(error, { extra: { paymentId, CheckoutRequestID } });
-    // Don't send 500, as Daraja will retry. Send 200.
     res.status(200).json({ ResultCode: 1, ResultDesc: "Internal server error" });
   }
 };
 
-// ... (getPaymentStatus function remains unchanged)
 export const getPaymentStatus = async (req: Request, res: Response) => {
   try {
     const { paymentId } = req.params;
@@ -172,6 +188,8 @@ export const getPaymentStatus = async (req: Request, res: Response) => {
     if (!payment) {
       return res.status(404).json({ success: false, message: "Payment not found" });
     }
+    
+    // TODO: Add security check to ensure user owns this payment
 
     res.status(200).json({ success: true, data: payment });
   } catch (error: any) {

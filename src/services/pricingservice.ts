@@ -4,10 +4,12 @@ import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 
 // ✅ NEW: Add a placeholder exchange rate
-// TODO: Replace this with a dynamic value from a live API (e.g., via cache)
+// This is no longer used here but will be used in our new admin controller.
 const USD_TO_KES_RATE = 130.0;
 
-// ✅ MODIFIED: The function signature now accepts 'currency'
+// ✅ MODIFIED: This function's logic is now obsolete.
+// We are disabling it to prevent the server from crashing.
+// The new, correct logic will be in the admin-facing pool calculator.
 export const calculatePrice = async (input: {
   basePrice: number;
   currency: "USD" | "KES";
@@ -16,100 +18,24 @@ export const calculatePrice = async (input: {
   route: string;
   userId?: string;
 }) => {
+  
+  logger.warn("DEPRECATED: The public 'calculatePrice' service was called.");
+  
+  return {
+    success: false,
+    message: "This pricing calculator is disabled. Please use the admin pool creation tool.",
+  };
+  
+  /*
+  // --- ALL OF THE OLD, BROKEN LOGIC IS REMOVED ---
   try {
     // 1. Convert basePrice to KES if necessary
-    const basePriceInKES =
-      input.currency === "USD"
-        ? input.basePrice * USD_TO_KES_RATE
-        : input.basePrice;
-
+    // ...
     // 2. Fetch freight rate
-    const freightRate = await prisma.freightRate.findFirst({
-      where: { route: input.route },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!freightRate) {
-      throw new Error(`Freight rate not found for route: ${input.route}`);
-    }
-    const freightCost = freightRate.ratePerKg * input.weightKg;
-
-    // 3. Calculate CIF (Cost, Insurance, Freight)
-    // Insurance is often a % of (Cost + Freight), e.g., 1.5%.
-    // For this calculation, we'll assume basePriceInKES is FOB
-    const insurance = (basePriceInKES + freightCost) * 0.015; // 1.5%
-    const cif = basePriceInKES + insurance + freightCost;
-
-    // 4. Fetch KRA tax rates
-    const kraRate = await prisma.kRARate.findFirst({
-      where: { hsCode: input.hsCode },
-      orderBy: { effectiveFrom: "desc" },
-    });
-    if (!kraRate) {
-      throw new Error(`KRA rates not found for HS code: ${input.hsCode}`);
-    }
-
-    // 5. Calculate taxes based on CIF
-    const importDuty = cif * kraRate.duty_rate;
-    const idf = cif * kraRate.idf_rate;
-    const rdl = cif * kraRate.rdl_rate;
-    const vatBase = cif + importDuty + idf + rdl;
-    const vat = vatBase * kraRate.vat_rate;
-    const taxesTotal = importDuty + idf + rdl + vat;
-
-    // 6. Calculate platform commission
-    // Commission on (CIF + Taxes)
-    const platformCommission = (cif + taxesTotal) * 0.1; // 10%
-
-    // 7. Calculate final price
-    const finalPrice = cif + taxesTotal + platformCommission;
-
-    // 8. Log the calculation (using KES values)
-    const logData = {
-      basePrice: basePriceInKES, // Store the KES-equivalent price
-      weightKg: input.weightKg,
-      distanceKm: 0, // 'distanceKm' seems legacy, but we'll keep it
-      route: input.route,
-      hsCode: input.hsCode,
-      freightRate: freightRate.ratePerKg,
-      duty_rate: kraRate.duty_rate,
-      rdl_rate: kraRate.rdl_rate,
-      idf_rate: kraRate.idf_rate,
-      vat_rate: kraRate.vat_rate,
-      taxesTotal: taxesTotal,
-      commission: platformCommission,
-      finalPrice: finalPrice,
-      userId: input.userId,
-    };
-
-    await prisma.priceCalculationLog.create({
-      data: logData,
-    });
-
-    // 9. Return the detailed breakdown
-    return {
-      success: true,
-      data: {
-        basePriceInKES: basePriceInKES,
-        cif: cif,
-        freightCost: freightCost,
-        insurance: insurance,
-        taxes: {
-          importDuty: importDuty,
-          idf: idf,
-          rdl: rdl,
-          vat: vat,
-          total: taxesTotal,
-        },
-        platformCommission: platformCommission,
-        finalPrice: finalPrice,
-      },
-    };
+    // const freightRate = await prisma.freightRate.findFirst({ ... }); // <-- THIS IS THE LINE THAT CRASHED
+    // ...
   } catch (error: any) {
-    logger.error("Error in pricing service:", error);
-    Sentry.captureException(error, { extra: input });
-    return {
-      success: false,
-      message: error.message || "Error calculating price.",
-    };
+    // ...
   }
+  */
 };

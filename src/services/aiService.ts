@@ -4,10 +4,12 @@ import {
   GenerationConfig,
   SafetySetting,
   HarmCategory,
-  HarmBlockThreshold, // ✅ NEW: Import the enum
+  HarmBlockThreshold,
 } from "@google/generative-ai";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
+// --- NEW: Import Prisma client ---
+import prisma from "../utils/prismaClient";
 
 const API_KEY = process.env.GOOGLE_API_KEY;
 
@@ -18,7 +20,6 @@ if (!API_KEY) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// Configure model for JSON output
 const generationConfig: GenerationConfig = {
   temperature: 0.2,
   topK: 1,
@@ -27,7 +28,6 @@ const generationConfig: GenerationConfig = {
   responseMimeType: "application/json",
 };
 
-// ✅ FIXED: Use the enum, not a string
 const safetySettings: SafetySetting[] = [
   {
     category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -47,7 +47,6 @@ const safetySettings: SafetySetting[] = [
   },
 ];
 
-// Define the shape of the JSON we expect
 interface HSCodeSuggestion {
   hs_code: string;
   code_description: string;
@@ -55,8 +54,10 @@ interface HSCodeSuggestion {
   reasoning: string;
 }
 
+// --- MODIFIED: Function signature now accepts optional userId ---
 export const getHSCodeSuggestion = async (
-  productDescription: string
+  productDescription: string,
+  userId?: string
 ): Promise<HSCodeSuggestion> => {
   try {
     const prompt = `
@@ -89,6 +90,25 @@ export const getHSCodeSuggestion = async (
     const suggestion = JSON.parse(jsonText) as HSCodeSuggestion;
 
     logger.info(`HS Code suggestion for "${productDescription}": ${suggestion.hs_code}`);
+
+    // --- NEW: Log the suggestion to the database ---
+    try {
+      await prisma.aiSuggestionLog.create({
+        data: {
+          userId: userId,
+          productDescription: productDescription,
+          hsCode: suggestion.hs_code,
+          confidence: suggestion.confidence,
+          reasoning: suggestion.reasoning,
+        },
+      });
+    } catch (logError) {
+      // Log and capture the error, but don't fail the main request
+      logger.error("Failed to log AI suggestion:", logError);
+      Sentry.captureException(logError, { extra: { productDescription } });
+    }
+    // --- End of new logging block ---
+
     return suggestion;
 
   } catch (error: any) {

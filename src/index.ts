@@ -10,14 +10,15 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
-import cookieParser from 'cookie-parser'; // ✅ FIX 1: Imports the package you just installed
+import cookieParser from 'cookie-parser'; 
 
 // Route Imports
 import authRouter from './routes/auth';
 import pricingRoutes from './routes/pricing';
 import categoryRoutes from './routes/categoryRoutes';
 import pricingLogRoutes from './routes/pricingLog';
-import adminFreightRoutes from './routes/adminFreight';
+// import adminFreightRoutes from './routes/adminFreight'; // --- DELETED ---
+import adminLogisticsRoutes from './routes/adminLogisticsRoutes'; // --- NEW ---
 import adminTaxRoutes from './routes/adminTax';
 import userRoutes from './routes/userRoutes';
 import adminPaymentRoutes from './routes/adminPaymentRoutes';
@@ -42,15 +43,13 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 app.use(express.json());
 
-// --- ✅ FIX 2: Correct CORS Configuration ---
+// --- CORS Configuration ---
 const allowedOrigins = [
-  'http://localhost:3000', // For your local frontend
+  'http://localhost:3000', 
   'https://gruppy-backend.onrender.com', // <-- REPLACE WITH YOUR VERCEL URL
-  // Add any other frontend URLs you have
 ];
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -59,13 +58,13 @@ const corsOptions: cors.CorsOptions = {
       callback(new Error(`CORS policy does not allow access from origin ${origin}`));
     }
   },
-  credentials: true, // This is required for cookies
+  credentials: true, 
 };
 app.use(cors(corsOptions));
-// --- End of CORS Fix ---
+// --- End of CORS ---
 
 app.use(helmet());
-app.use(cookieParser()); // ✅ FIX: This MUST be included
+app.use(cookieParser()); 
 
 // Rate limiting
 const limiter = rateLimit({
@@ -80,10 +79,11 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 // API Routes
 app.use('/health', healthRouter);
-app.use('/api/auth', authRouter); // ✅ FIX 3: This adds the /api prefix
+app.use('/api/auth', authRouter); 
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/pricing/logs', pricingLogRoutes);
-app.use('/api/admin/freight', adminFreightRoutes);
+// app.use('/api/admin/freight', adminFreightRoutes); // --- DELETED ---
+app.use('/api/admin/logistics-routes', adminLogisticsRoutes); // --- NEW ---
 app.use('/api/admin/tax', adminTaxRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
 app.use('/api/user', userRoutes);

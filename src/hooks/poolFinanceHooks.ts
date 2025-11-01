@@ -1,4 +1,19 @@
+// src/hooks/poolFinanceHooks.ts
 import prisma from "../utils/prismaClient";
+import { GlobalSetting } from "@prisma/client";
+import logger from "../utils/logger";
+import * as Sentry from "@sentry/node";
+
+/**
+ * A helper function to convert the GlobalSetting array into a usable object
+ */
+const getSettings = (settings: GlobalSetting[]) => {
+  const settingsMap = new Map(settings.map((s) => [s.key, parseFloat(s.value)]));
+  return {
+    PLATFORM_FEE_RATE: settingsMap.get("PLATFORM_FEE_RATE") || 0.05,
+    // Add other rates as needed
+  };
+};
 
 /**
  * Calculates and updates the financial metrics for a given pool.
@@ -13,55 +28,70 @@ export async function updatePoolFinance(
   >,
   poolId: string
 ) {
-  // 1. Fetch all necessary data for calculation within the transaction
-  const pool = await tx.pool.findUnique({
-    where: { id: poolId },
-    include: {
-      product: true, // Needed for the base cost
-    },
-  });
+  logger.info(`FINANCE HOOK: Updating finance for Pool ID: ${poolId}...`);
 
-  if (!pool) {
-    throw new Error(`Pool with ID ${poolId} not found during finance update.`);
+  try {
+    // 1. Fetch all necessary data for calculation within the transaction
+    const [pool, finance, globalSettings] = await Promise.all([
+      tx.pool.findUniqueOrThrow({
+        where: { id: poolId },
+      }),
+      tx.poolFinance.findUniqueOrThrow({
+        where: { poolId: poolId },
+      }),
+      tx.globalSetting.findMany({
+        where: { key: { in: ["PLATFORM_FEE_RATE"] } },
+      }),
+    ]);
+
+    const settings = getSettings(globalSettings);
+
+    // 2. Perform all financial calculations using the pre-calculated costs
+    // N = current number of members in the pool
+    const N = pool.currentQuantity;
+
+    // These values were pre-calculated and stored during pool creation
+    const totalFixedCosts = finance.totalFixedCosts || 0;
+    const totalVariableCostPerUnit = finance.totalVariableCostPerUnit || 0;
+    const benchmarkPricePerUnit = finance.benchmarkPricePerUnit || 0;
+
+    // Calculate total cost for N members
+    const totalLandedCost = totalFixedCosts + (totalVariableCostPerUnit * N);
+    
+    // Calculate total revenue for N members
+    const totalRevenue = pool.pricePerUnit * N;
+
+    // Calculate profit (Revenue - Cost)
+    const grossProfit = totalRevenue - totalLandedCost;
+
+    // Calculate platform earning based on the profit
+    const platformEarning = grossProfit > 0 ? grossProfit * settings.PLATFORM_FEE_RATE : 0;
+
+    // Calculate member savings (Benchmark Price - Selling Price)
+    const totalBenchmarkPrice = benchmarkPricePerUnit * N;
+    const memberSavings = totalBenchmarkPrice > totalRevenue ? totalBenchmarkPrice - totalRevenue : 0;
+
+    // 3. Update the PoolFinance record with the new real-time values
+    await tx.poolFinance.update({
+      where: { poolId: pool.id },
+      data: {
+        totalRevenue: totalRevenue,
+        totalCost: totalLandedCost,
+        grossProfit: grossProfit,
+        platformEarning: platformEarning,
+        memberSavings: memberSavings,
+        // Update legacy fields for compatibility (if needed)
+        platformFee: settings.PLATFORM_FEE_RATE,
+        logisticCost: totalFixedCosts, // Store fixed costs here for reference
+      },
+    });
+
+    logger.info(`FINANCE HOOK: Successfully updated finance for Pool ID: ${poolId}`);
+
+  } catch (error: any) {
+    logger.error(`FINANCE HOOK: Error updating finance for pool ${poolId}:`, error);
+    Sentry.captureException(error, { extra: { poolId, context: "updatePoolFinance Hook" } });
+    // Re-throw the error to fail the parent transaction
+    throw error;
   }
-
-  // Define business logic constants
-  const LOGISTIC_COST_PER_UNIT = 5.0; // Example placeholder for shipping/handling per item
-  const PLATFORM_FEE_RATE = 0.05; // 5% platform fee on gross profit
-
-  // 2. Perform all financial calculations
-  const totalRevenue = pool.pricePerUnit * pool.currentQuantity;
-  const totalBaseCost = pool.product.basePrice * pool.currentQuantity;
-  const totalLogisticCost = LOGISTIC_COST_PER_UNIT * pool.currentQuantity;
-  const totalCost = totalBaseCost + totalLogisticCost;
-  const grossProfit = totalRevenue - totalCost;
-  const platformEarning = grossProfit > 0 ? grossProfit * PLATFORM_FEE_RATE : 0;
-  // Example savings calculation, can be made more complex later
-  const memberSavings = grossProfit > 0 ? grossProfit * 0.1 : 0; 
-
-  // 3. Use `upsert` to create or update the PoolFinance record
-  // This is more robust than separate find/update calls
-  await tx.poolFinance.upsert({
-    where: { poolId: pool.id },
-    update: {
-      totalRevenue,
-      totalCost,
-      grossProfit,
-      platformEarning,
-      memberSavings,
-    },
-    create: {
-      poolId: pool.id,
-      baseCostPerUnit: pool.product.basePrice,
-      logisticCost: LOGISTIC_COST_PER_UNIT,
-      platformFee: PLATFORM_FEE_RATE,
-      totalRevenue,
-      totalCost,
-      grossProfit,
-      platformEarning,
-      memberSavings,
-    },
-  });
-
-  console.log(`FINANCE HOOK: Successfully updated finance for Pool ID: ${poolId}`);
 }

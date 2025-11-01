@@ -1,8 +1,8 @@
 // src/routes/poolRoutes.ts
 import { Router } from "express";
 import {
-  getAllPools, // ✅ FIXED
-  getAllPoolsAdmin, // ✅ FIXED
+  getAllPools,
+  getAllPoolsAdmin,
   getPoolById,
   joinPool,
   createPool,
@@ -10,6 +10,9 @@ import {
   deletePool,
   adminUpdatePoolStatus,
 } from "../controllers/poolController";
+// --- NEW: Import the admin pool controller ---
+import { calculatePoolPricing } from "../controllers/adminPoolController";
+
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import {
@@ -17,14 +20,14 @@ import {
   updatePoolSchema,
   joinPoolSchema,
   adminUpdatePoolStatusSchema,
+  calculatePoolPricingSchema, // --- NEW: Import the new schema ---
 } from "../schemas/poolSchemas";
 import { requireAdmin } from "../middleware/admin";
 
 const router = Router();
 
 // --- Public routes ---
-// Gets all pools that are 'FILLING' and not past deadline
-router.get("/", getAllPools); // ✅ FIXED
+router.get("/", getAllPools);
 router.get("/:id", getPoolById);
 
 // --- Authenticated user routes ---
@@ -36,8 +39,17 @@ router.post(
 );
 
 // --- Admin routes ---
+// --- NEW: Admin Pricing Helper ---
+router.post(
+  "/admin/calculate-pricing",
+  authenticate,
+  requireAdmin,
+  validate(calculatePoolPricingSchema),
+  calculatePoolPricing
+);
+
 // Gets ALL pools for the admin dashboard
-router.get("/admin/all", authenticate, requireAdmin, getAllPoolsAdmin); // ✅ FIXED
+router.get("/admin/all", authenticate, requireAdmin, getAllPoolsAdmin);
 
 router.post(
   "/",

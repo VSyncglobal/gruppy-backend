@@ -6,16 +6,37 @@ import * as Sentry from "@sentry/node";
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    // ✅ MODIFIED: Added categoryId and subcategoryId
-    const { name, hsCode, basePrice, categoryId, subcategoryId } = req.body;
+    const { 
+      name, 
+      hsCode, 
+      basePrice, 
+      benchmarkPrice, // --- NEW ---
+      weightKg,     // --- NEW ---
+      defaultRoute, // --- NEW ---
+      subcategoryId // --- MODIFIED (Now required) ---
+    } = req.body;
+
+    // --- NEW: Find the parent category from the subcategory ---
+    const subcategory = await prisma.subcategory.findUnique({
+      where: { id: subcategoryId },
+      select: { categoryId: true }
+    });
+
+    if (!subcategory) {
+      return res.status(404).json({ success: false, message: "Subcategory not found" });
+    }
+    // --- End new logic ---
 
     const product = await prisma.product.create({
       data: {
         name,
         hsCode,
         basePrice: parseFloat(basePrice),
-        categoryId,
+        benchmarkPrice: parseFloat(benchmarkPrice), // --- NEW ---
+        weightKg: parseFloat(weightKg),         // --- NEW ---
+        defaultRoute,                             // --- NEW ---
         subcategoryId,
+        categoryId: subcategory.categoryId,       // --- NEW: Auto-link parent category ---
       },
     });
 
@@ -23,10 +44,10 @@ export const createProduct = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error("Error creating product:", error);
     Sentry.captureException(error);
-    if (error.code === "P2025") {
-       return res
-        .status(404)
-        .json({ success: false, message: "Category or Subcategory not found" });
+    if (error.code === "P2002" && error.meta?.target?.includes("name")) {
+      return res
+        .status(409)
+        .json({ success: false, message: "A product with this name already exists." });
     }
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -35,7 +56,6 @@ export const createProduct = async (req: Request, res: Response) => {
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
-      // ✅ MODIFIED: To include category and subcategory names
       include: {
         category: { select: { name: true } },
         subcategory: { select: { name: true } },
@@ -49,8 +69,6 @@ export const getAllProducts = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
-// --- ✅ NEWLY ADDED FUNCTIONS ---
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
@@ -81,8 +99,31 @@ export const getProductById = async (req: Request, res: Response) => {
 export const updateProduct = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    // ✅ MODIFIED: Added categoryId and subcategoryId
-    const { name, hsCode, basePrice, categoryId, subcategoryId } = req.body;
+    const { 
+      name, 
+      hsCode, 
+      basePrice, 
+      benchmarkPrice,
+      weightKg,
+      defaultRoute,
+      subcategoryId 
+    } = req.body;
+
+    let categoryId: string | undefined = undefined;
+
+    // --- NEW: If subcategory is being changed, find its new parent ---
+    if (subcategoryId) {
+      const subcategory = await prisma.subcategory.findUnique({
+        where: { id: subcategoryId },
+        select: { categoryId: true }
+      });
+
+      if (!subcategory) {
+        return res.status(404).json({ success: false, message: "Subcategory not found" });
+      }
+      categoryId = subcategory.categoryId;
+    }
+    // --- End new logic ---
 
     const product = await prisma.product.update({
       where: { id },
@@ -90,8 +131,11 @@ export const updateProduct = async (req: Request, res: Response) => {
         name,
         hsCode,
         basePrice: basePrice ? parseFloat(basePrice) : undefined,
-        categoryId,
+        benchmarkPrice: benchmarkPrice ? parseFloat(benchmarkPrice) : undefined,
+        weightKg: weightKg ? parseFloat(weightKg) : undefined,
+        defaultRoute,
         subcategoryId,
+        categoryId, // --- NEW: Update parent category if subcategory changed ---
       },
     });
     res.status(200).json({ success: true, data: product });

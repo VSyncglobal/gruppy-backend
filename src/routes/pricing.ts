@@ -1,6 +1,5 @@
 // src/routes/pricing.ts
 import { Router } from "express";
-// ✅ FIXED: Renamed import from 'calculatePricing'
 import { calculatePriceHandler, getPricingLogs } from "../controllers/pricingcontroller";
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
@@ -8,12 +7,15 @@ import { calculatePriceSchema } from "../schemas/pricingSchemas";
 
 const router = Router();
 
+/*
+// --- MODIFIED: This route is temporarily disabled as its logic is obsolete ---
 router.post(
   "/calculate",
-  authenticate, // User must be logged in to use calculator
+  authenticate, 
   validate(calculatePriceSchema),
-  calculatePriceHandler // ✅ FIXED: Use the correct handler name
+  calculatePriceHandler 
 );
+*/
 
 router.get(
   "/logs",
