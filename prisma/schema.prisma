@@ -272,7 +272,7 @@ model Pool {
   id              String     @id @default(cuid())
   title           String
   description     String?
-  imageUrl        String?
+  imageUrls        String[]
   productId       String
   pricePerUnit    Float
   targetQuantity  Int

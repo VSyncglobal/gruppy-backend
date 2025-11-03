@@ -4,20 +4,14 @@ import prisma from "../utils/prismaClient";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 import { PoolStatus, PaymentStatus, GlobalSetting } from "@prisma/client";
-// --- NEW: Import the finance hook ---
 import { updatePoolFinance } from "../hooks/poolFinanceHooks";
 
-/**
- * A helper function to convert the GlobalSetting array into a usable object
- */
 const getSettings = (settings: GlobalSetting[]) => {
   const settingsMap = new Map(settings.map((s) => [s.key, parseFloat(s.value)]));
   return {
     CONTINGENCY_FEE_RATE: settingsMap.get("CONTINGENCY_FEE_RATE") || 0.02,
-    // Add other rates as needed
   };
 };
-
 
 // Get all pools (public)
 export const getAllPools = async (req: Request, res: Response) => {
@@ -101,11 +95,10 @@ export const getPoolById = async (req: Request, res: Response) => {
   }
 };
 
-// --- THIS FUNCTION IS NOW REWRITTEN ---
 // User joins a pool
 export const joinPool = async (req: Request, res: Response) => {
   const { id: poolId } = req.params;
-  const { quantity, method } = req.body; // --- MODIFIED: Added 'method'
+  const { quantity, method } = req.body;
   const userId = (req as any).user.id;
 
   try {
@@ -122,7 +115,7 @@ export const joinPool = async (req: Request, res: Response) => {
         throw new Error("This pool's deadline has passed.");
       }
 
-      // 2. Check for existing UNPAID memberships for this user in this pool
+      // 2. Check for existing UNPAID memberships
       const existingPendingMember = await tx.poolMember.findFirst({
         where: {
           userId: userId,
@@ -134,13 +127,12 @@ export const joinPool = async (req: Request, res: Response) => {
         include: { payment: true },
       });
 
-      // 3. If they have a pending payment, return that instead of creating a new one
       if (existingPendingMember && existingPendingMember.payment) {
         logger.warn(`User ${userId} attempting to re-join pool ${poolId} with a pending payment. Returning existing payment ${existingPendingMember.paymentId}.`);
         return { payment: existingPendingMember.payment, pool };
       }
 
-      // 4. Check if they are already a SUCCESSFUL member
+      // 3. Check if they are already a SUCCESSFUL member
       const existingSuccessMember = await tx.poolMember.findFirst({
         where: {
           userId: userId,
@@ -154,7 +146,7 @@ export const joinPool = async (req: Request, res: Response) => {
         throw new Error("You are already a confirmed member of this pool.");
       }
 
-      // 5. Calculate new quantity and check if pool will close
+      // 4. Calculate new quantity and check if pool will close
       const newQuantity = pool.currentQuantity + quantity;
       let newStatus: PoolStatus = pool.status;
       if (newQuantity >= pool.targetQuantity) {
@@ -163,27 +155,26 @@ export const joinPool = async (req: Request, res: Response) => {
       const progress = (newQuantity / pool.targetQuantity) * 100;
       const cumulativeValue = newQuantity * pool.pricePerUnit;
 
-      // 6. Create the PENDING Payment record
+      // 5. Create the PENDING Payment record
       const payment = await tx.payment.create({
         data: {
           amount: pool.pricePerUnit * quantity,
           status: PaymentStatus.PENDING,
           method: method,
-          // We will link the poolMember in a moment
         },
       });
 
-      // 7. Create the PoolMember and link it to the Payment
+      // 6. Create the PoolMember and link it to the Payment
       await tx.poolMember.create({
         data: {
           poolId,
           userId,
           quantity,
-          paymentId: payment.id, // Link to the payment
+          paymentId: payment.id,
         },
       });
 
-      // 8. Update the pool's quantity, status, and progress
+      // 7. Update the pool's quantity, status, and progress
       const updatedPool = await tx.pool.update({
         where: { id: poolId },
         data: {
@@ -194,10 +185,9 @@ export const joinPool = async (req: Request, res: Response) => {
         },
       });
 
-      // 9. Call the finance hook for real-time dashboard update
+      // 8. Call the finance hook
       await updatePoolFinance(tx, poolId);
 
-      // 10. Return the new payment and updated pool
       return { payment, pool: updatedPool };
     });
 
@@ -205,7 +195,6 @@ export const joinPool = async (req: Request, res: Response) => {
       logger.info(`Pool ${poolId} has been filled by user ${userId} and is now CLOSED.`);
     }
 
-    // 11. Return the pending payment details to the frontend
     res.status(201).json({
       success: true,
       message: "Pool joined. Please complete your payment.",
@@ -226,13 +215,13 @@ export const joinPool = async (req: Request, res: Response) => {
 };
 
 
-// Admin: Create a new pool (This function is from Phase 2, unchanged)
+// Admin: Create a new pool
 export const createPool = async (req: Request, res: Response) => {
   try {
     const {
       title,
       description,
-      imageUrl,
+      imageUrls,
       productId,
       pricePerUnit,
       targetQuantity,
@@ -293,7 +282,7 @@ export const createPool = async (req: Request, res: Response) => {
         data: {
           title,
           description,
-          imageUrl,
+          imageUrls: imageUrls || [],
           productId,
           pricePerUnit: parseFloat(pricePerUnit),
           targetQuantity: parseInt(targetQuantity, 10),
@@ -338,7 +327,7 @@ export const updatePool = async (req: Request, res: Response) => {
     const {
       title,
       description,
-      imageUrl,
+      imageUrls,
       pricePerUnit, 
       targetQuantity,
       minJoiners,
@@ -350,7 +339,7 @@ export const updatePool = async (req: Request, res: Response) => {
       data: {
         title,
         description,
-        imageUrl,
+        imageUrls,
         pricePerUnit: pricePerUnit ? parseFloat(pricePerUnit) : undefined,
         targetQuantity: targetQuantity ? parseInt(targetQuantity, 10) : undefined,
         minJoiners: minJoiners ? parseInt(minJoiners, 10) : undefined,
@@ -408,12 +397,15 @@ export const deletePool = async (req: Request, res: Response) => {
     if (error.code === "P2025") {
       return res.status(404).json({ success: false, message: "Pool not found" });
     }
-     if (error.code === "P2003" || error.code === "P2014") {
+    // --- THIS IS THE FIX ---
+    // Replaced 4KON with 409
+    if (error.code === "P2003" || error.code === "P2014") {
       return res.status(409).json({
         success: false,
         message: "Cannot delete pool, check foreign key constraints (e.g., reviews, orders).",
       });
     }
+    // --- END OF FIX ---
     res.status(500).json({ success: false, message: error.message });
   }
 };
