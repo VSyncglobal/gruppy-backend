@@ -6,7 +6,6 @@ import { PaymentStatus, PaymentMethod } from "@prisma/client";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 
-// --- THIS FUNCTION IS NOW REWRITTEN ---
 /**
  * Initiates a payment for an *existing* PENDING payment record.
  * This is called *after* a user has already joined a pool.
@@ -44,15 +43,22 @@ export const createPayment = async (req: Request, res: Response) => {
     }
 
     // 3. --- Payment Provider Logic ---
-    // We can now use a switch to handle different payment providers
     switch (method) {
       case PaymentMethod.MPESA:
         // Initiate the STK push
         const stkResponse = await initiateSTKPush(
           payment.amount,
           phone,
-          payment.id // Pass our internal paymentId as the AccountReference
+          payment.id // We still pass our internal paymentId as the AccountReference
         );
+        
+        // Store the CheckoutRequestID to link the webhook
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerTransactionId: stkResponse.checkoutRequestID,
+          },
+        });
         
         return res.status(200).json({
           success: true,
@@ -92,26 +98,27 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
 
   const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = stkCallback;
 
-  const paymentId = stkCallback.AccountReference; 
-  
-  if (!paymentId) {
-     logger.error("Webhook received with no AccountReference (paymentId)", stkCallback);
-     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+  if (!CheckoutRequestID) {
+     logger.error("Webhook received with no CheckoutRequestID", stkCallback);
+     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted (No CheckoutRequestID)" });
   }
 
   try {
+    // Find the payment using the CheckoutRequestID
     const payment = await prisma.payment.findUnique({
-      where: { id: paymentId },
+      where: { providerTransactionId: CheckoutRequestID },
     });
+    
+    const paymentId = payment?.id;
 
     if (!payment) {
-      logger.error(`Webhook for unknown paymentId: ${paymentId}`);
-      return res.status(404).json({ success: false, message: "Payment not found" });
+      logger.error(`Webhook for unknown CheckoutRequestID: ${CheckoutRequestID}`);
+      return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted (Payment not found)" });
     }
 
     if (payment.status !== PaymentStatus.PENDING) {
       logger.warn(`Webhook for already processed payment: ${paymentId}, status: ${payment.status}`);
-      return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+      return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted (Already Processed)" });
     }
     
     // --- This is the SUCCESS case ---
@@ -120,32 +127,38 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
       
       const metadata = CallbackMetadata.Item;
       const mpesaReceipt = metadata.find((i: any) => i.Name === "MpesaReceiptNumber")?.Value;
-      const transactionDateStr = metadata.find((i: any) => i.Name === "TransactionDate")?.Value; // YYYYMMDDHHMMSS
       
-      const transactionDate = transactionDateStr 
+      // ✅ --- START OF FIX --- ✅
+      // 1. Get the value (which is a NUMBER, e.g., 20251104150507)
+      const transactionDateValue = metadata.find((i: any) => i.Name === "TransactionDate")?.Value;
+      
+      // 2. Create the date object
+      const transactionDate = transactionDateValue 
             ? new Date(
-                parseInt(transactionDateStr.slice(0, 4)),  // Year
-                parseInt(transactionDateStr.slice(4, 6)) - 1, // Month (0-indexed)
-                parseInt(transactionDateStr.slice(6, 8)),  // Day
-                parseInt(transactionDateStr.slice(8, 10)), // Hour
-                parseInt(transactionDateStr.slice(10, 12)),// Minute
-                parseInt(transactionDateStr.slice(12, 14)) // Second
+                // 3. Convert the number to a string *before* slicing it
+                parseInt(String(transactionDateValue).slice(0, 4)),  // Year
+                parseInt(String(transactionDateValue).slice(4, 6)) - 1, // Month (0-indexed)
+                parseInt(String(transactionDateValue).slice(6, 8)),  // Day
+                parseInt(String(transactionDateValue).slice(8, 10)), // Hour
+                parseInt(String(transactionDateValue).slice(10, 12)),// Minute
+                parseInt(String(transactionDateValue).slice(12, 14)) // Second
               )
             : new Date();
+      // ✅ --- END OF FIX --- ✅
 
       await prisma.payment.update({
         where: { id: paymentId },
         data: {
           status: PaymentStatus.SUCCESS,
-          providerConfirmationCode: mpesaReceipt,
-          providerTransactionId: CheckoutRequestID, 
+          providerConfirmationCode: String(mpesaReceipt), // Also cast receipt to string just in case
+          providerTransactionId: CheckoutRequestID,
           transaction_date: transactionDate,
           metadata: metadata,
         },
       });
       
     } else {
-      // --- This is the FAILED case ---
+      // --- This is the FAILED case (e.g., user canceled) ---
       logger.warn(`Webhook FAILED for payment ${paymentId}: ${ResultDesc}`);
       await prisma.payment.update({
         where: { id: paymentId },
@@ -154,17 +167,14 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
           metadata: stkCallback,
         },
       });
-      
-      // NOTE: We DO NOT trigger the finance hook here.
-      // The cleanup job will handle the deletion and finance update.
     }
 
     // Acknowledge receipt to Safaricom
     res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 
   } catch (error: any) {
-    logger.error(`Error processing webhook for payment ${paymentId}:`, error);
-    Sentry.captureException(error, { extra: { paymentId, CheckoutRequestID } });
+    logger.error(`Error processing webhook for CheckoutRequestID ${CheckoutRequestID}:`, error);
+    Sentry.captureException(error, { extra: { CheckoutRequestID } });
     res.status(200).json({ ResultCode: 1, ResultDesc: "Internal server error" });
   }
 };

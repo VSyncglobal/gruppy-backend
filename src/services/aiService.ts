@@ -8,7 +8,6 @@ import {
 } from "@google/generative-ai";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
-// --- NEW: Import Prisma client ---
 import prisma from "../utils/prismaClient";
 
 const API_KEY = process.env.GOOGLE_API_KEY;
@@ -18,7 +17,11 @@ if (!API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+// ✅ --- START OF FIX 3 --- ✅
+// Use the stable "gemini-1.0-pro" model
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// ✅ --- END OF FIX 3 --- ✅
 
 const generationConfig: GenerationConfig = {
   temperature: 0.2,
@@ -54,7 +57,6 @@ interface HSCodeSuggestion {
   reasoning: string;
 }
 
-// --- MODIFIED: Function signature now accepts optional userId ---
 export const getHSCodeSuggestion = async (
   productDescription: string,
   userId?: string
@@ -91,7 +93,6 @@ export const getHSCodeSuggestion = async (
 
     logger.info(`HS Code suggestion for "${productDescription}": ${suggestion.hs_code}`);
 
-    // --- NEW: Log the suggestion to the database ---
     try {
       await prisma.aiSuggestionLog.create({
         data: {
@@ -103,15 +104,14 @@ export const getHSCodeSuggestion = async (
         },
       });
     } catch (logError) {
-      // Log and capture the error, but don't fail the main request
       logger.error("Failed to log AI suggestion:", logError);
       Sentry.captureException(logError, { extra: { productDescription } });
     }
-    // --- End of new logging block ---
 
     return suggestion;
 
   } catch (error: any) {
+    // Log the full error for debugging
     logger.error("Error getting HS code suggestion from AI:", error);
     Sentry.captureException(error);
     throw new Error("Failed to get HS code suggestion from AI.");

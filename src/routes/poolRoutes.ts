@@ -10,7 +10,6 @@ import {
   deletePool,
   adminUpdatePoolStatus,
 } from "../controllers/poolController";
-// --- NEW: Import the admin pool controller ---
 import { calculatePoolPricing } from "../controllers/adminPoolController";
 
 import { authenticate } from "../middleware/auth";
@@ -20,9 +19,13 @@ import {
   updatePoolSchema,
   joinPoolSchema,
   adminUpdatePoolStatusSchema,
-  calculatePoolPricingSchema, // --- NEW: Import the new schema ---
+  calculatePoolPricingSchema,
 } from "../schemas/poolSchemas";
 import { requireAdmin } from "../middleware/admin";
+
+// ✅ --- NEW IMPORT ---
+import { requireVerified } from "../middleware/requireVerified";
+// ✅ --- END NEW IMPORT ---
 
 const router = Router();
 
@@ -33,13 +36,13 @@ router.get("/:id", getPoolById);
 // --- Authenticated user routes ---
 router.post(
   "/:id/join",
-  authenticate,
+  authenticate,     // 1. Must be logged in
+  requireVerified,  // 2. ✅ MUST be verified
   validate(joinPoolSchema),
   joinPool
 );
 
 // --- Admin routes ---
-// --- NEW: Admin Pricing Helper ---
 router.post(
   "/admin/calculate-pricing",
   authenticate,
@@ -48,7 +51,6 @@ router.post(
   calculatePoolPricing
 );
 
-// Gets ALL pools for the admin dashboard
 router.get("/admin/all", authenticate, requireAdmin, getAllPoolsAdmin);
 
 router.post(

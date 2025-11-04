@@ -1,66 +1,85 @@
-// src/controllers/auth.ts (FIXED for your specific codebase)
-
+// src/controllers/auth.ts
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../utils/prismaClient';
-// ✅ FIX 1: Use the correct function names from your jwt.ts
-import { signAccessToken, signRefreshToken } from '../utils/jwt'; 
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { loginSchema, registerSchema } from '../schemas/authSchemas';
 import logger from '../utils/logger';
 import * as Sentry from '@sentry/node';
 
+// ✅ --- NEW IMPORTS ---
+import { generateVerificationToken, generateNumericCode, hashToken } from '../utils/token';
+import { mailService } from '../services/mailService';
+import crypto from 'crypto';
+// ✅ --- END NEW IMPORTS ---
+
 const REFRESH_TOKEN_COOKIE_NAME = 'jid';
 
-/**
- * Creates a secure cookie for the refresh token.
- */
 const sendRefreshToken = (res: Response, token: string) => {
   res.cookie(REFRESH_TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    path: '/api/auth/refresh', // Only send cookie to refresh path
+    path: '/api/auth/refresh',
     expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
   });
 };
 
 /**
- * Handles user registration.
- * Creates a user, generates tokens, and sends them.
+ * ✅ --- MODIFIED: Handles user registration AND sends verification email ---
  */
 export const register = async (req: Request, res: Response) => {
   try {
-    // ✅ FIX 2: Destructure from the 'body' property of the parsed schema
     const { name, email, password, role } = registerSchema.parse(req).body;
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // ✅ --- NEW: Generate a verification token ---
+    const verificationToken = generateVerificationToken();
+
     const user = await prisma.user.create({
-      // ✅ FIX 3: Use 'password_hash' to match your schema.prisma
-      data: { name, email, password_hash: hashedPassword, role },
-    });
-
-    // ✅ FIX 1 & 2: Use the correct function names and include the 'role'
-    const accessToken = signAccessToken({ userId: user.id, role: user.role });
-    const refreshToken = signRefreshToken({ userId: user.id });
-
-    // Store the new refresh token in the database
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: expiresAt,
+      data: { 
+        name, 
+        email, 
+        password_hash: hashedPassword, 
+        role,
+        emailVerificationToken: verificationToken, // <-- Save the token
       },
     });
 
+    // ✅ --- NEW: Simulate sending the verification email ---
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/verify-email?token=${verificationToken}`;
+    await mailService.sendEmail({
+      to: user.email,
+      subject: "Welcome to Gruppy! Please verify your email.",
+      text: `Thanks for signing up! Please click the link to verify your email: ${verificationUrl} \n\nYour token is: ${verificationToken}`,
+    });
+
+    // --- (Rest of the function is the same: sign tokens & send response) ---
+
+    const accessToken = signAccessToken({ userId: user.id, role: user.role });
+    const refreshToken = signRefreshToken({ userId: user.id });
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.$transaction([
+      prisma.refreshToken.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.refreshToken.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt: expiresAt,
+        },
+      }),
+    ]);
+
     sendRefreshToken(res, refreshToken);
 
-    // This response matches your frontend login/register page expectations
     return res.status(201).json({
       success: true,
+      message: "Registration successful. Please check your email to verify your account.", // <-- Modified message
       data: {
         accessToken,
         refreshToken, 
@@ -69,12 +88,12 @@ export const register = async (req: Request, res: Response) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          emailVerified: user.emailVerified, // <-- Send verification status
         },
       },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      // ✅ FIX 5: Use 'error.issues' not 'error.errors'
       return res
         .status(400)
         .json({ success: false, error: 'Validation error', issues: error.issues });
@@ -96,11 +115,9 @@ export const register = async (req: Request, res: Response) => {
 
 /**
  * Handles user login.
- * Verifies credentials, generates tokens, and sends them.
  */
 export const login = async (req: Request, res: Response) => {
   try {
-    // ✅ FIX 2: Destructure from the 'body' property of the parsed schema
     const { email, password } = loginSchema.parse(req).body;
 
     const user = await prisma.user.findUnique({ where: { email } });
@@ -110,7 +127,6 @@ export const login = async (req: Request, res: Response) => {
         .json({ success: false, error: 'Invalid credentials' });
     }
 
-    // ✅ FIX 3: Compare with 'password_hash' from your schema.prisma
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
       return res
@@ -118,16 +134,11 @@ export const login = async (req: Request, res: Response) => {
         .json({ success: false, error: 'Invalid credentials' });
     }
 
-    // ✅ FIX 1 & 2: Use the correct function names and include the 'role'
     const accessToken = signAccessToken({ userId: user.id, role: user.role });
     const refreshToken = signRefreshToken({ userId: user.id });
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // ✅ FIX 4: This is the correct way to handle the token replacement crash.
-    // The error showed 'token' is unique, so we upsert based on the *token* itself,
-    // and provide the 'userId' as part of the data.
-    // But even safer is to delete old ones and create the new one.
     await prisma.$transaction([
       prisma.refreshToken.deleteMany({
         where: { userId: user.id },
@@ -143,7 +154,6 @@ export const login = async (req: Request, res: Response) => {
 
     sendRefreshToken(res, refreshToken);
 
-    // This response matches your frontend login/register page expectations
     return res.json({
       success: true,
       data: {
@@ -154,12 +164,12 @@ export const login = async (req: Request, res: Response) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          emailVerified: user.emailVerified, // <-- Send verification status
         },
       },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      // ✅ FIX 5: Use 'error.issues' not 'error.errors'
       return res
         .status(400)
         .json({ success: false, error: 'Validation error', issues: error.issues });
@@ -171,7 +181,7 @@ export const login = async (req: Request, res: Response) => {
 };
 
 /**
- * Handles refreshing the access token using the refresh token.
+ * Handles refreshing the access token.
  */
 export const refresh = async (req: Request, res: Response) => {
   const token = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
@@ -180,9 +190,10 @@ export const refresh = async (req: Request, res: Response) => {
   }
 
   try {
+    // ✅ --- MODIFIED: Include user's emailVerified status in refresh ---
     const dbToken = await prisma.refreshToken.findUnique({
-      where: { token }, // This is correct, 'token' is the unique key
-      include: { user: true },
+      where: { token },
+      include: { user: { select: { id: true, role: true, emailVerified: true } } }, // <-- Get verification status
     });
 
     if (!dbToken || dbToken.expiresAt < new Date()) {
@@ -191,8 +202,12 @@ export const refresh = async (req: Request, res: Response) => {
         .json({ success: false, error: 'Invalid or expired refresh token' });
     }
 
-    // ✅ FIX 1 & 2: Use the correct function name and include the 'role'
-    const newAccessToken = signAccessToken({ userId: dbToken.user.id, role: dbToken.user.role });
+    // Pass role AND verification status to the new token
+    const newAccessToken = signAccessToken({ 
+      userId: dbToken.user.id, 
+      role: dbToken.user.role,
+      emailVerified: dbToken.user.emailVerified, // <-- Add to token payload
+    });
     return res.json({ success: true, data: { accessToken: newAccessToken } });
   } catch (error) {
     logger.error('Refresh token error:', { error });
@@ -203,7 +218,6 @@ export const refresh = async (req: Request, res: Response) => {
 
 /**
  * Handles user logout.
- * Clears the refresh token cookie.
  */
 export const logout = (_req: Request, res: Response) => {
   res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
@@ -213,4 +227,127 @@ export const logout = (_req: Request, res: Response) => {
     path: '/api/auth/refresh',
   });
   return res.json({ success: true, message: 'Logged out' });
+};
+
+
+// --- ✅ NEW FUNCTION: Verify Email ---
+export const verifyEmail = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { emailVerificationToken: token },
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired verification token." });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ success: false, message: "Email is already verified." });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerificationToken: null, // Invalidate the token
+      },
+    });
+
+    return res.status(200).json({ success: true, message: "Email verified successfully. You can now log in." });
+
+  } catch (error) {
+    logger.error('Email verification error:', { error });
+    Sentry.captureException(error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// --- ✅ NEW FUNCTION: Forgot Password ---
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      // User found. Generate a 6-digit code.
+      const resetCode = generateNumericCode(6);
+      
+      // Hash the code before saving it to the DB
+      const { hashedToken, expiresAt } = hashToken(resetCode);
+
+      // Store the hashed token in the new table
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          token: hashedToken,
+          expiresAt: expiresAt,
+        }
+      });
+
+      // Simulate sending the email with the *raw* code
+      await mailService.sendEmail({
+        to: user.email,
+        subject: "Your Gruppy Password Reset Code",
+        text: `You requested a password reset. Your 6-digit code is: ${resetCode} \n\nThis code will expire in 1 hour.`,
+      });
+    }
+
+    // Always send a success response, even if user doesn't exist.
+    // This prevents attackers from guessing which emails are registered.
+    return res.status(200).json({ success: true, message: "If an account with that email exists, a password reset code has been sent." });
+
+  } catch (error) {
+    logger.error('Forgot password error:', { error });
+    Sentry.captureException(error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+
+// --- ✅ NEW FUNCTION: Reset Password ---
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    // 1. Hash the raw token from the user so we can find it in the DB
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // 2. Find the token
+    const resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token: hashedToken },
+    });
+
+    if (!resetToken) {
+      return res.status(400).json({ success: false, message: "Invalid or expired reset code." });
+    }
+
+    if (resetToken.expiresAt < new Date()) {
+      // Token is expired, delete it
+      await prisma.passwordResetToken.delete({ where: { id: resetToken.id } });
+      return res.status(400).json({ success: false, message: "Invalid or expired reset code." });
+    }
+
+    // 3. Token is valid. Hash the new password
+    const newHashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 4. Update the user's password and delete the token in a transaction
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetToken.userId },
+        data: { password_hash: newHashedPassword },
+      }),
+      prisma.passwordResetToken.delete({
+        where: { id: resetToken.id },
+      })
+    ]);
+
+    return res.status(200).json({ success: true, message: "Password reset successful. You can now log in." });
+
+  } catch (error) {
+    logger.error('Reset password error:', { error });
+    Sentry.captureException(error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 };

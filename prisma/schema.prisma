@@ -65,6 +65,12 @@ model User {
   email         String   @unique
   password_hash String
   role          UserRole @default(CONSUMER)
+  phone         String?  @unique
+  address       String?
+  location      String?
+
+  emailVerified         Boolean  @default(false)
+  emailVerificationToken String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -79,6 +85,7 @@ model User {
   poolMemberships PoolMember[]
   reviews         Review[]
   aiLogs          AiSuggestionLog[] // --- NEW RELATION ---
+  passwordResetTokens PasswordResetToken[]
 }
 
 model RefreshToken {
@@ -88,6 +95,17 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique     // The unique, hashed 6-digit code
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Affiliate {

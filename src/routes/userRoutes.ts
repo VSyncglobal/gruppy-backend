@@ -3,27 +3,60 @@ import { Router } from "express";
 import {
   getUserProfile,
   updateUserProfile,
-  getMyPools, // <-- NEW
-  getUserDashboardStats, // <-- NEW
+  getMyPools,
+  getUserDashboardStats,
+  changePassword, // <-- NEW
+  updatePhone,    // <-- NEW
+  updateAddress,  // <-- NEW
 } from "../controllers/userController";
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
-// ✅ NEW: Import the schema we just added
-import { updateUserSchema } from "../schemas/authSchemas";
+import { 
+  updateUserSchema,
+  changePasswordSchema, // <-- NEW
+  updatePhoneSchema,    // <-- NEW
+  updateAddressSchema,  // <-- NEW
+} from "../schemas/authSchemas";
 
 const router = Router();
 
 // --- Authenticated User Routes ---
 router.get("/profile", authenticate, getUserProfile);
 
+// ✅ --- NEW PROFILE MANAGEMENT ROUTES ---
+
+// (Existing name/email update)
 router.put(
   "/profile",
   authenticate,
-  validate(updateUserSchema), // ✅ This will now work
+  validate(updateUserSchema),
   updateUserProfile
 );
 
-// ✅ --- NEW DASHBOARD ROUTES --- ✅
+router.post(
+  "/profile/change-password",
+  authenticate,
+  validate(changePasswordSchema),
+  changePassword
+);
+
+router.put(
+  "/profile/phone",
+  authenticate,
+  validate(updatePhoneSchema),
+  updatePhone
+);
+
+router.put(
+  "/profile/address",
+  authenticate,
+  validate(updateAddressSchema),
+  updateAddress
+);
+
+// ✅ --- END NEW PROFILE MANAGEMENT ROUTES ---
+
+// --- DASHBOARD ROUTES ---
 router.get(
   "/my-pools", 
   authenticate, 

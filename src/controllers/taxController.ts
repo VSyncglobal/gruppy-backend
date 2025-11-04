@@ -1,10 +1,10 @@
+// src/controllers/taxController.ts
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 
-const safeNum = (val: any) => (isNaN(parseFloat(val)) ? 0 : parseFloat(val));
-
+// No change to this function
 export async function getTaxRates(req: Request, res: Response) {
   try {
     const rates = await prisma.kRARate.findMany({
@@ -17,32 +17,30 @@ export async function getTaxRates(req: Request, res: Response) {
   }
 }
 
+// ✅ --- CORRECTION FOR addTaxRate --- ✅
 export async function addTaxRate(req: Request, res: Response) {
   try {
     const {
       hsCode,
-      dutyRate,
-      rdlRate,
-      idfRate,
-      vatRate,
+      duty_rate, // FIX: Use snake_case
+      rdl_rate,  // FIX: Use snake_case
+      idf_rate,  // FIX: Use snake_case
+      vat_rate,  // FIX: Use snake_case
       description,
       effectiveFrom,
       effectiveTo,
     } = req.body;
 
-    // ✅ Validate numeric conversion
-    const parsedDuty = parseFloat(dutyRate) || 0;
-    const parsedRdl = parseFloat(rdlRate) || 0;
-    const parsedIdf = parseFloat(idfRate) || 0;
-    const parsedVat = parseFloat(vatRate) || 0;
-
+    // ✅ FIX: The schema already validates these as numbers.
+    // We can remove parseFloat completely.
+    // The `|| 0` is still good practice.
     const rate = await prisma.kRARate.create({
       data: {
         hsCode,
-        duty_rate: parsedDuty,
-        rdl_rate: parsedRdl,
-        idf_rate: parsedIdf,
-        vat_rate: parsedVat,
+        duty_rate: duty_rate || 0,
+        rdl_rate: rdl_rate || 0,
+        idf_rate: idf_rate || 0,
+        vat_rate: vat_rate || 0,
         description,
         effectiveFrom: new Date(effectiveFrom),
         effectiveTo: effectiveTo ? new Date(effectiveTo) : null,
@@ -53,18 +51,23 @@ export async function addTaxRate(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error adding tax rate:", error);
     Sentry.captureException(error);
+    // Add a specific check for the unique constraint
+    if ((error as any).code === 'P2002') {
+      return res.status(409).json({ error: "Unique constraint failed. This HS code and effective date already exist." });
+    }
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
 
+// ✅ --- CORRECTION FOR updateTaxRate --- ✅
 export async function updateTaxRate(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const {
-      dutyRate,
-      rdlRate,
-      idfRate,
-      vatRate,
+      duty_rate, // FIX: Use snake_case
+      rdl_rate,  // FIX: Use snake_case
+      idf_rate,  // FIX: Use snake_case
+      vat_rate,  // FIX: Use snake_case
       description,
       effectiveTo,
     } = req.body;
@@ -72,10 +75,11 @@ export async function updateTaxRate(req: Request, res: Response) {
      const updated = await prisma.kRARate.update({
       where: { id },
       data: {
-        duty_rate: parseFloat(dutyRate) || 0,
-        rdl_rate: parseFloat(rdlRate) || 0,
-        idf_rate: parseFloat(idfRate) || 0,
-        vat_rate: parseFloat(vatRate) || 0,
+        // FIX: Use the correct variables and fallback to 0
+        duty_rate: duty_rate || 0,
+        rdl_rate: rdl_rate || 0,
+        idf_rate: idf_rate || 0,
+        vat_rate: vat_rate || 0,
         description,
         effectiveTo: effectiveTo ? new Date(effectiveTo) : null,
       },
