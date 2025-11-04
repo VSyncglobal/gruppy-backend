@@ -49,8 +49,9 @@ app.use(express.json());
 
 // --- CORS Configuration ---
 const allowedOrigins = [
-  'http://localhost:3000', 
-  'https://gruppy-backend.onrender.com', // <-- REPLACE WITH YOUR VERCEL URL
+  "http://localhost:3000",              // Local frontend
+  "https://gruppy-frontend.vercel.app", // Production frontend
+  "https://gruppy-backend.onrender.com" // Backend itself (Render)
 ];
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
