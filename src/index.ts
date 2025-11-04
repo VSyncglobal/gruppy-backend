@@ -32,6 +32,7 @@ import reviewRoutes from './routes/reviewRoutes';
 import aiRoutes from './routes/aiRoutes';
 import adminGlobalSettingsRoutes from './routes/adminGlobalSettingsRoutes';
 import sourcingRoutes from './routes/sourcingRoutes';
+import poolFinanceRoutes from './routes/poolFinanceRoutes';
 
 
 // Job Scheduler
@@ -100,6 +101,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin/settings', adminGlobalSettingsRoutes);
 app.use('/api/sourcing-requests', sourcingRoutes);
+app.use('/api/admin/finance', poolFinanceRoutes);
 
 
 // Root route

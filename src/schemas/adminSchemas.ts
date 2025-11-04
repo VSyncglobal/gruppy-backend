@@ -42,14 +42,14 @@ export const kraRateSchema = z.object({
 // For promoting a user to admin
 export const promoteUserSchema = z.object({
     body: z.object({
-        userId: z.string().cuid({ message: "A valid userId is required" }),
+        userId: z.string().min(1, "A valid userId is required"),
     })
 });
 
 // For creating a new affiliate
 export const createAffiliateSchema = z.object({
     body: z.object({
-        userId: z.string().cuid({ message: "A valid userId is required" }),
+        userId: z.string().min(1, "A valid userId is required"),
         commissionRate: z.number().positive().optional(),
     })
 });

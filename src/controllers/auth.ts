@@ -29,7 +29,7 @@ const sendRefreshToken = (res: Response, token: string) => {
  */
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role } = registerSchema.parse(req).body;
+    const { name, email, password } = registerSchema.parse(req).body;
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const verificationToken = generateVerificationToken();
@@ -39,7 +39,7 @@ export const register = async (req: Request, res: Response) => {
         name, 
         email, 
         password_hash: hashedPassword, 
-        role,
+        //role,
         emailVerificationToken: verificationToken,
         emailVerified: false, // Explicitly set to false on creation
       },
