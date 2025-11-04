@@ -54,7 +54,12 @@ enum PaymentMethod {
   STRIPE
   AIRTEL_MONEY
 }
-
+enum SourcingStatus {
+  PENDING
+  RESEARCHING
+  SOURCED
+  REJECTED
+}
 //////////////////////
 // MODELS
 //////////////////////
@@ -86,6 +91,8 @@ model User {
   reviews         Review[]
   aiLogs          AiSuggestionLog[] // --- NEW RELATION ---
   passwordResetTokens PasswordResetToken[]
+  sourcingRequests SourcingRequest[]
+  reviewLikes ReviewLike[]
 }
 
 model RefreshToken {
@@ -409,10 +416,26 @@ model Review {
   product   Product? @relation(fields: [productId], references: [id])
   poolId    String?
   pool      Pool?    @relation(fields: [poolId], references: [id])
+  likes   ReviewLike[]
+  parentId  String?     @map("parent_id")
+  parent    Review?     @relation("ReviewReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Review[]    @relation("ReviewReplies")
 
   @@index([userId])
   @@index([productId])
   @@index([poolId])
+  @@index([parentId])
+}
+
+model ReviewLike {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  @@unique([userId, reviewId]) // User can only like a review once
 }
 
 // --- NEW MODEL: GlobalSetting ---
@@ -437,4 +460,24 @@ model AiSuggestionLog {
 
   @@index([userId])
   @@index([hsCode])
+}
+model SourcingRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  productDescription String // User's request, e.g., "Wooden dining table, 6 seats"
+  status      SourcingStatus @default(PENDING)
+  
+  // These fields are for the admin to fill in
+  notes         String? // Admin's internal notes (supplier links, etc.)
+  hsCode        String?
+  basePrice     Float?  // Estimated wholesale price
+  benchmarkPrice Float? // Estimated retail/benchmark price
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }

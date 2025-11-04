@@ -1,6 +1,7 @@
 // src/schemas/reviewSchemas.ts
 import { z } from "zod";
 
+// This is for creating a NEW, top-level review
 export const createReviewSchema = z.object({
   body: z.object({
     rating: z
@@ -16,6 +17,7 @@ export const createReviewSchema = z.object({
   }),
 });
 
+// This is for UPDATING an existing review
 export const updateReviewSchema = z.object({
   params: z.object({
     id: z.string().cuid("Invalid review ID"),
@@ -28,5 +30,16 @@ export const updateReviewSchema = z.object({
       .max(5, "Rating must be at most 5")
       .optional(),
     comment: z.string().optional(),
+  }),
+});
+
+// --- ✅ NEW SCHEMA ---
+// This is for replying to an existing review
+export const replyToReviewSchema = z.object({
+  params: z.object({
+    id: z.string().cuid("Invalid parent review ID"), // The ID of the review we are replying to
+  }),
+  body: z.object({
+    comment: z.string().min(1, "Reply comment cannot be empty"),
   }),
 });

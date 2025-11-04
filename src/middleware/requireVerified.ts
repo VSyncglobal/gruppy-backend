@@ -1,36 +1,33 @@
-// src/utils/token.ts
-import crypto from 'crypto';
+// src/middleware/requireVerified.ts
+import { Response, NextFunction } from "express";
+import { AuthRequest } from "./auth"; // Import the AuthRequest type
 
-/**
- * Generates a secure, random 6-digit numeric code.
- */
-export const generateNumericCode = (length: number = 6): string => {
-  return crypto.randomInt(0, Math.pow(10, length)).toString().padStart(length, '0');
-};
+export function requireVerified(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const user = req.user;
 
-/**
- * Generates a secure, random, URL-safe string token.
- */
-export const generateVerificationToken = (length: number = 32): string => {
-  return crypto.randomBytes(length).toString('hex');
-};
+  if (!user) {
+    // This should technically be caught by `authenticate` first, but good to be safe
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
-/**
- * Creates a hashed token and its expiration date.
- * @param token The raw token to hash.
- * @returns { hashedToken: string, expiresAt: Date }
- */
-export const hashToken = (token: string) => {
-  // NOTE: For password resets, we hash the token before saving.
-  // This is a security best practice. If the DB is leaked,
-  // attackers can't use the raw reset tokens.
-  // For this example, we'll just use a simple hash.
-  // In production, you'd use bcrypt, but that's slow for tokens.
-  // We'll use a fast, secure, non-reversible hash.
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  // Admins are always allowed to bypass this check
+  if (user.role === "ADMIN") {
+    return next();
+  }
 
-  // Token expires in 1 hour
-  const expiresAt = new Date(Date.now() + 3600 * 1000); 
-
-  return { hashedToken, expiresAt };
-};
+  // Check the emailVerified status we added to req.user in auth.ts
+  if (!user.emailVerified) {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Please verify your email address to perform this action.",
+      code: "EMAIL_NOT_VERIFIED",
+    });
+  }
+  
+  // If we're here, user is verified
+  next();
+}
