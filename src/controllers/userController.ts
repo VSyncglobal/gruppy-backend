@@ -11,7 +11,6 @@ import bcrypt from 'bcryptjs';
 // This function was already here
 export const getUserProfile = async (req: Request, res: Response) => {
   const user = (req as any).user;
-  // ✅ --- MODIFIED: Return all new profile fields ---
   const userProfile = await prisma.user.findUnique({
     where: { id: user.id },
     select: {
@@ -23,7 +22,8 @@ export const getUserProfile = async (req: Request, res: Response) => {
       phone: true,
       address: true,
       location: true,
-      createdAt: true
+      createdAt: true,
+      emailVerificationToken: true // ✅ --- FIX: ADDED THIS LINE ---
     }
   });
   res.json(userProfile);
@@ -40,7 +40,6 @@ export const updateUserProfile = async (req: Request, res: Response) => {
         name,
         email,
       },
-      // ✅ --- MODIFIED: Return all new profile fields ---
       select: {
         id: true,
         name: true,
@@ -50,7 +49,8 @@ export const updateUserProfile = async (req: Request, res: Response) => {
         phone: true,
         address: true,
         location: true,
-        createdAt: true
+        createdAt: true,
+        emailVerificationToken: true // ✅ --- FIX: ADDED THIS LINE ---
       }
     });
 
@@ -179,7 +179,18 @@ export const updatePhone = async (req: Request, res: Response) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { phone },
-      select: { id: true, name: true, email: true, role: true, emailVerified: true, phone: true, address: true, location: true, createdAt: true },
+      select: { 
+        id: true, 
+        name: true, 
+        email: true, 
+        role: true, 
+        emailVerified: true, 
+        phone: true, 
+        address: true, 
+        location: true, 
+        createdAt: true,
+        emailVerificationToken: true // ✅ --- FIX: ADDED THIS LINE ---
+      },
     });
     res.status(200).json({ success: true, data: updatedUser });
   } catch (error: any) {
@@ -200,7 +211,18 @@ export const updateAddress = async (req: Request, res: Response) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { address, location },
-      select: { id: true, name: true, email: true, role: true, emailVerified: true, phone: true, address: true, location: true, createdAt: true },
+      select: { 
+        id: true, 
+        name: true, 
+        email: true, 
+        role: true, 
+        emailVerified: true, 
+        phone: true, 
+        address: true, 
+        location: true, 
+        createdAt: true,
+        emailVerificationToken: true // ✅ --- FIX: ADDED THIS LINE ---
+      },
     });
     res.status(200).json({ success: true, data: updatedUser });
   } catch (error: any) {
