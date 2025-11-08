@@ -1,4 +1,5 @@
 // This is your new schema.prisma file
+// Changes for v1.3 are marked with comments.
 
 generator client {
   provider = "prisma-client-js"
@@ -42,24 +43,34 @@ enum DeletionEntityType {
 enum PoolStatus {
   FILLING
   CLOSED
-  SHIPPING
+  SHIPPING // This status will now be triggered by a Shipment
   READY_FOR_PICKUP
   DELIVERED
   CANCELLED
 }
 
-// --- NEW: PaymentMethod enum as requested ---
 enum PaymentMethod {
   MPESA
   STRIPE
   AIRTEL_MONEY
 }
+
 enum SourcingStatus {
   PENDING
   RESEARCHING
   SOURCED
   REJECTED
 }
+
+// --- NEW (v1.3): For Container Sharing ---
+enum ShipmentStatus {
+  PLANNING // Admin is adding pools to this shipment
+  LOCKED // Admin has finalized the shipment, ready for transit
+  IN_TRANSIT
+  ARRIVED // Arrived at port
+  CLEARED // Cleared customs, ready for last-mile
+}
+
 //////////////////////
 // MODELS
 //////////////////////
@@ -71,28 +82,69 @@ model User {
   password_hash String
   role          UserRole @default(CONSUMER)
   phone         String?  @unique
-  address       String?
-  location      String?
+
+  // --- MODIFIED (v1.3): Replaced by UserAddress model ---
+  // address       String? // Deprecated
+  // location      String? // Deprecated
 
   emailVerified         Boolean  @default(false)
   emailVerificationToken String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // --- NEW (v1.3): Account Balance ---
+  accountBalance Float    @default(0)
+
   // relations
-  orders          Order[]
-  affiliate       Affiliate?
-  pricingLogs     PriceCalculationLog[] @relation("UserPriceCalcLogs")
-  pricingRequests PricingRequest[]
-  refreshTokens   RefreshToken[]
-  PricingLog      PricingLog[]
-  createdPools    Pool[]       @relation("CreatedPools")
-  poolMemberships PoolMember[]
-  reviews         Review[]
-  aiLogs          AiSuggestionLog[] // --- NEW RELATION ---
+  orders              Order[]
+  affiliate           Affiliate?
+  pricingLogs         PriceCalculationLog[] @relation("UserPriceCalcLogs")
+  pricingRequests     PricingRequest[]
+  refreshTokens       RefreshToken[]
+  PricingLog          PricingLog[]
+  createdPools        Pool[]                @relation("CreatedPools")
+  poolMemberships     PoolMember[]
+  reviews             Review[]
+  aiLogs              AiSuggestionLog[]
   passwordResetTokens PasswordResetToken[]
-  sourcingRequests SourcingRequest[]
-  reviewLikes ReviewLike[]
+  sourcingRequests    SourcingRequest[]
+  reviewLikes         ReviewLike[]
+
+  // --- NEW (v1.3): Relation to saved addresses ---
+  addresses           UserAddress[]
+}
+
+// --- NEW (v1.3): For saved user addresses (Point 5) ---
+model UserAddress {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String // e.g., "Home", "Work"
+  addressLine1 String // e.g., "Plaza Towers, Apt 12"
+  town         String // e.g., "Nyeri" (from KenyanTown)
+  county       String // e.g., "Nyeri" (from KenyanTown)
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+// --- NEW (v1.3): For preloading Kenyan towns (Point 5) ---
+model KenyanTown {
+  id     String @id @default(cuid())
+  name   String // e.g., "Nyeri", "Ruiru"
+  county String // e.g., "Nyeri", "Kiambu"
+
+  @@unique([name, county])
+  @@index([county])
+}
+
+// --- NEW (v1.3): For delivery cost calculation (Point 6) ---
+model DeliveryRate {
+  id        String @id @default(cuid())
+  county    String @unique // e.g., "Nairobi", "Kiambu"
+  baseRate  Float // Base fee for this county
+  ratePerKg Float // Additional fee per Kg
 }
 
 model RefreshToken {
@@ -106,7 +158,7 @@ model RefreshToken {
 
 model PasswordResetToken {
   id        String   @id @default(cuid())
-  token     String   @unique     // The unique, hashed 6-digit code
+  token     String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
@@ -125,81 +177,88 @@ model Affiliate {
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  orderId   String?
-  amount    Float
-  status    PaymentStatus @default(PENDING)
-  
-  // --- MODIFIED: Uses the new enum ---
-  method    PaymentMethod
-
-  // --- RENAMED: 'mpesa_receipt_number' is now generic ---
-  providerConfirmationCode String?     // e.g., M-Pesa Receipt, Stripe Charge ID
-
-  // --- KEPT: This is already generic (e.g., M-Pesa CheckoutRequestID) ---
-  providerTransactionId   String?       @unique 
-  
-  transaction_date      DateTime?
-  
-  // --- KEPT: All provider-specific data (like M-Pesa's full callback) goes here. ---
-  metadata              Json?
-  
-  createdAt             DateTime      @default(now())
-  order                 Order?        @relation(fields: [orderId], references: [id])
-  poolMember            PoolMember?   @relation("PaymentToPoolMember")
+  id                       String        @id @default(cuid())
+  orderId                  String?
+  amount                   Float
+  status                   PaymentStatus @default(PENDING)
+  method                   PaymentMethod
+  providerConfirmationCode String?
+  providerTransactionId    String?       @unique
+  transaction_date         DateTime?
+  metadata                 Json?
+  createdAt                DateTime      @default(now())
+  order                    Order?        @relation(fields: [orderId], references: [id])
+  poolMember               PoolMember?   @relation("PaymentToPoolMember")
+  // Note: The poolMember relation is on the PoolMember model (paymentId).
+  // If a PoolMember is deleted, this relation will be null.
+  // This is likely why the admin panel shows "deleted" - it's a frontend
+  // rendering issue, not a schema issue.
 
   @@index([orderId])
 }
 
-
 model Product {
-  id        String   @id @default(cuid())
-  name      String
-  hsCode    String
-  
-  // --- MODIFIED: This is now the NEGOTIATED WHOLESALE (EXW/FOB) price ---
-  basePrice     Float   
-  
-  // --- NEW FIELD: The "AliExpress" or individual benchmark price ---
-  benchmarkPrice Float   
-  
-  // --- NEW FIELD: The weight per unit ---
-  weightKg      Float   
-  
-  // --- NEW FIELD: The default route name, e.g., "China-Mombasa Sea" ---
-  defaultRoute  String   
+  id             String   @id @default(cuid())
+  name           String
+  hsCode         String
+  basePrice      Float // NEGOTIATED WHOLESALE (EXW/FOB) price
+  benchmarkPrice Float // "AliExpress" or individual benchmark price
+  weightKg       Float
+  defaultRoute   String
 
-  createdAt DateTime @default(now())
+  // --- NEW (v1.3): For Container Sharing (Volume in Cubic Meters) ---
+  volumeCBM      Float    @default(0)
+
+  createdAt      DateTime @default(now())
 
   // relations
-  orders      Order[]
-  pools       Pool[]
-  categoryId  String?
-  
-  // --- MODIFIED: This is now mandatory (removed '?') ---
-  subcategoryId String   
-  
-  category    Category?    @relation(fields: [categoryId], references: [id])
-  
-  // --- MODIFIED: This is now mandatory (removed '?') ---
-  subcategory Subcategory @relation(fields: [subcategoryId], references: [id]) 
-  
-  reviews     Review[]
+  orders         Order[]
+  pools          Pool[]
+  categoryId     String
+  subcategoryId  String
+  category       Category    @relation(fields: [categoryId], references: [id])
+  subcategory    Subcategory @relation(fields: [subcategoryId], references: [id])
+  reviews        Review[]
 }
 
-// --- REPLACED 'FreightRate' with 'LogisticsRoute' ---
+// REPLACED 'FreightRate' with 'LogisticsRoute'
 model LogisticsRoute {
   id                    String   @id @default(cuid())
   name                  String   @unique // e.g., "20-ft Container, Shenzhen to Mombasa"
-  seaFreightCost        Float    // Fixed cost for the container
-  originCharges         Float    // Fixed origin terminal handling, etc.
-  portChargesMombasa    Float    // Fixed destination port charges (KPA, etc.)
-  clearingAgentFee      Float    // Fixed agent fee
-  inlandTransportCost   Float    // Fixed cost from Mombasa to Nairobi
-  containerDeposit      Float    // Refundable deposit
-  marineInsuranceRate   Float    // Per-unit rate, e.g., 0.01 (1%)
-  
+  seaFreightCost        Float
+  originCharges         Float
+  portChargesMombasa    Float
+  clearingAgentFee      Float
+  inlandTransportCost   Float
+  containerDeposit      Float
+  marineInsuranceRate   Float
+
+  // --- NEW (v1.3): For Container Sharing (Capacity) ---
+  capacityCBM           Float    @default(0) // e.g., 33.0 for a 20ft container
+  capacityKg            Float    @default(0) // e.g., 25000 for a 20ft container
+
   createdAt             DateTime @default(now())
+
+  // --- NEW (v1.3): Relation to shipments using this route type ---
+  shipments             Shipment[]
+}
+
+// --- NEW (v1.3): For Container Sharing ---
+// This model represents an actual, physical container shipment
+// that can hold multiple pools.
+model Shipment {
+  id               String         @id @default(cuid())
+  name             String // e.g., "Shipment 2025-11-10"
+  logisticsRouteId String // The *type* of container/route being used
+  logisticsRoute   LogisticsRoute @relation(fields: [logisticsRouteId], references: [id])
+  status           ShipmentStatus @default(PLANNING)
+  totalCBM         Float          @default(0) // Current filled CBM
+  totalKg          Float          @default(0) // Current filled Kg
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // A shipment can contain many pools
+  pools            Pool[]
 }
 
 model KRARate {
@@ -222,7 +281,7 @@ model PriceCalculationLog {
   id          String   @id @default(cuid())
   userId      String?
   basePrice   Float
-  distanceKm  Float // This is legacy, but we leave it to avoid breaking changes
+  distanceKm  Float
   weightKg    Float
   route       String?
   hsCode      String?
@@ -249,6 +308,7 @@ model PricingRequest {
   result    Json?
   createdAt DateTime @default(now())
   user      User?    @relation(fields: [userId], references: [id])
+  pools     Pool[]
 }
 
 model Order {
@@ -297,11 +357,11 @@ model Pool {
   id              String     @id @default(cuid())
   title           String
   description     String?
-  imageUrls        String[]
+  imageUrls       String[]
   productId       String
   pricePerUnit    Float
   targetQuantity  Int
-  minJoiners      Int        @default(1) // --- MODIFIED: This will now be set by the admin setup calculator
+  minJoiners      Int        @default(1)
   currentQuantity Int        @default(0)
   profitMargin    Float?
   progress        Float?     @default(0)
@@ -318,30 +378,33 @@ model Pool {
   finance      PoolFinance? @relation("PoolToFinance")
   reviews      Review[]
 
+  // --- NEW (v1.3): Relation to a container/shipment ---
+  shipmentId   String?
+  shipment     Shipment?    @relation(fields: [shipmentId], references: [id])
+  pricingRequestId String?
+  pricingRequest   PricingRequest? @relation(fields: [pricingRequestId], references: [id])
+
   @@index([status])
   @@index([createdById])
   @@index([productId])
+  @@index([shipmentId]) // Add index for new relation
 }
 
 model PoolFinance {
   id                       String    @id @default(cuid())
   poolId                   String    @unique
-  baseCostPerUnit          Float // This is the NEGOTIATED WHOLESALE price
-  
-  // --- NEW FIELDS ---
-  benchmarkPricePerUnit    Float?    // The calculated "AliExpress" price for savings
-  totalFixedCosts          Float?    // The total container/shipping/port costs
-  totalVariableCostPerUnit Float?    // The per-unit cost (wholesale + tax + insurance)
-  
-  // --- Legacy fields below (can be deprecated/repurposed later) ---
-  logisticCost             Float?    @default(0) 
+  baseCostPerUnit          Float
+  benchmarkPricePerUnit    Float?
+  totalFixedCosts          Float? // The total container/shipping/port costs
+  totalVariableCostPerUnit Float? // The per-unit cost (wholesale + tax + insurance)
+  calculationDebugData     Json?
+  logisticCost             Float?    @default(0)
   totalRevenue             Float?    @default(0)
   totalCost                Float?    @default(0)
   grossProfit              Float?    @default(0)
-  platformFee              Float?    @default(0.05) 
+  platformFee              Float?    @default(0.05)
   platformEarning          Float?    @default(0)
   memberSavings            Float?    @default(0)
-  
   isFinalized              Boolean   @default(false)
   finalizedAt              DateTime?
   createdAt                DateTime  @default(now())
@@ -378,11 +441,11 @@ model DeletionLog {
 }
 
 model AdminEarnings {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   poolFinanceId String
   amount        Float
   description   String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime    @default(now())
   poolFinance   PoolFinance @relation(fields: [poolFinanceId], references: [id])
 
   @@index([poolFinanceId])
@@ -396,10 +459,10 @@ model Category {
 }
 
 model Subcategory {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   name       String
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category  @relation(fields: [categoryId], references: [id])
   products   Product[]
 
   @@index([categoryId])
@@ -416,7 +479,7 @@ model Review {
   product   Product? @relation(fields: [productId], references: [id])
   poolId    String?
   pool      Pool?    @relation(fields: [poolId], references: [id])
-  likes   ReviewLike[]
+  likes     ReviewLike[]
   parentId  String?     @map("parent_id")
   parent    Review?     @relation("ReviewReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Review[]    @relation("ReviewReplies")
@@ -428,26 +491,24 @@ model Review {
 }
 
 model ReviewLike {
-  id       String @id @default(cuid())
+  id       String   @id @default(cuid())
   userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewId String
-  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  
+  review   Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-  @@unique([userId, reviewId]) // User can only like a review once
+
+  @@unique([userId, reviewId])
 }
 
-// --- NEW MODEL: GlobalSetting ---
 model GlobalSetting {
   id        String   @id @default(cuid())
-  key       String   @unique // e.g., "USD_TO_KES_RATE"
-  value     String   // e.g., "143.5"
+  key       String   @unique
+  value     String
   notes     String?
   updatedAt DateTime @updatedAt
 }
 
-// --- NEW MODEL: AiSuggestionLog ---
 model AiSuggestionLog {
   id                 String   @id @default(cuid())
   userId             String?
@@ -461,22 +522,19 @@ model AiSuggestionLog {
   @@index([userId])
   @@index([hsCode])
 }
+
 model SourcingRequest {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  productDescription String // User's request, e.g., "Wooden dining table, 6 seats"
-  status      SourcingStatus @default(PENDING)
-  
-  // These fields are for the admin to fill in
-  notes         String? // Admin's internal notes (supplier links, etc.)
-  hsCode        String?
-  basePrice     Float?  // Estimated wholesale price
-  benchmarkPrice Float? // Estimated retail/benchmark price
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String         @id @default(cuid())
+  userId             String
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productDescription String
+  status             SourcingStatus @default(PENDING)
+  notes              String?
+  hsCode             String?
+  basePrice          Float?
+  benchmarkPrice     Float?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([userId])
   @@index([status])

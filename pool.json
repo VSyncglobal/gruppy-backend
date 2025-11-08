@@ -1,0 +1,20 @@
+{
+    "title": "Pool #2 for Balance Test",
+    "description": "This pool will be joined by consumer2",
+    "imageUrls": ["https://example.com/image1.jpg"],
+    "productId": "cmhp8f7rk0001ddh5bt1jwxhe",
+    "pricePerUnit": 196,
+    "targetQuantity": 100,
+    "minJoiners": 36,
+    "deadline": "2025-12-31T23:59:59Z",
+    "pricingRequestId": "cmhq79gm60001ddwqkcps1wd7",
+    "totalFixedCosts": 27.88,
+    "totalVariableCostPerUnit": 185.42,
+    "debugData": {
+        "dominantFraction": 0.006060606060606061,
+        "profitPerUnit": 0.7800000000000118,
+        "cifValue": 121.47878787878788,
+        "totalTaxes": 60.302070303030305,
+        "trueLandedCost": 181.7808581818182
+    }
+}

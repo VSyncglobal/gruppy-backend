@@ -33,6 +33,10 @@ import aiRoutes from './routes/aiRoutes';
 import adminGlobalSettingsRoutes from './routes/adminGlobalSettingsRoutes';
 import sourcingRoutes from './routes/sourcingRoutes';
 import poolFinanceRoutes from './routes/poolFinanceRoutes';
+import locationRoutes from "./routes/locationRoutes";
+import deliveryRoutes from "./routes/deliveryRoutes";
+import adminShipmentRoutes from "./routes/adminShipmentRoutes"; // --- NEW (v1.3) ---
+
 
 
 // Job Scheduler
@@ -91,7 +95,11 @@ app.use('/api/pricing/logs', pricingLogRoutes);
 app.use('/api/admin/logistics-routes', adminLogisticsRoutes); // --- NEW ---
 app.use('/api/admin/tax', adminTaxRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
-app.use('/api/user', userRoutes);
+
+// --- THIS IS THE FIX ---
+app.use('/api/users', userRoutes); // Changed from /api/user
+// --- END OF FIX ---
+
 app.use('/api/pools', poolRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/products', productRoutes);
@@ -103,6 +111,9 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/admin/settings', adminGlobalSettingsRoutes);
 app.use('/api/sourcing-requests', sourcingRoutes);
 app.use('/api/admin/finance', poolFinanceRoutes);
+app.use("/api/locations", locationRoutes);
+app.use("/api/delivery", deliveryRoutes);
+app.use("/api/admin/shipments", adminShipmentRoutes);
 
 
 // Root route

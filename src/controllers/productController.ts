@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
+import { Prisma } from '@prisma/client'; // Import Prisma type for update
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
@@ -10,13 +11,14 @@ export const createProduct = async (req: Request, res: Response) => {
       name, 
       hsCode, 
       basePrice, 
-      benchmarkPrice, // --- NEW ---
-      weightKg,     // --- NEW ---
-      defaultRoute, // --- NEW ---
-      subcategoryId // --- MODIFIED (Now required) ---
+      benchmarkPrice,
+      weightKg,
+      defaultRoute,
+      subcategoryId,
+      volumeCBM // --- ADDED (v1.3) ---
     } = req.body;
 
-    // --- NEW: Find the parent category from the subcategory ---
+    // --- Your existing logic (preserved) ---
     const subcategory = await prisma.subcategory.findUnique({
       where: { id: subcategoryId },
       select: { categoryId: true }
@@ -25,18 +27,19 @@ export const createProduct = async (req: Request, res: Response) => {
     if (!subcategory) {
       return res.status(404).json({ success: false, message: "Subcategory not found" });
     }
-    // --- End new logic ---
+    // --- End existing logic ---
 
     const product = await prisma.product.create({
       data: {
         name,
         hsCode,
         basePrice: parseFloat(basePrice),
-        benchmarkPrice: parseFloat(benchmarkPrice), // --- NEW ---
-        weightKg: parseFloat(weightKg),         // --- NEW ---
-        defaultRoute,                             // --- NEW ---
+        benchmarkPrice: parseFloat(benchmarkPrice),
+        weightKg: parseFloat(weightKg),
+        defaultRoute,
         subcategoryId,
-        categoryId: subcategory.categoryId,       // --- NEW: Auto-link parent category ---
+        categoryId: subcategory.categoryId,       // Your logic
+        volumeCBM: parseFloat(volumeCBM) || 0   // --- ADDED (v1.3) ---
       },
     });
 
@@ -48,6 +51,9 @@ export const createProduct = async (req: Request, res: Response) => {
       return res
         .status(409)
         .json({ success: false, message: "A product with this name already exists." });
+    }
+     if (error.code === 'P2025') {
+      return res.status(404).json({ success: false, message: "Subcategory not found" });
     }
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -106,12 +112,22 @@ export const updateProduct = async (req: Request, res: Response) => {
       benchmarkPrice,
       weightKg,
       defaultRoute,
-      subcategoryId 
+      subcategoryId,
+      volumeCBM // --- ADDED (v1.3) ---
     } = req.body;
 
-    let categoryId: string | undefined = undefined;
+    // Use Prisma.ProductUpdateInput type for data object
+    const data: Prisma.ProductUpdateInput = {
+      name,
+      hsCode,
+      basePrice: basePrice ? parseFloat(basePrice) : undefined,
+      benchmarkPrice: benchmarkPrice ? parseFloat(benchmarkPrice) : undefined,
+      weightKg: weightKg ? parseFloat(weightKg) : undefined,
+      defaultRoute,
+      volumeCBM: volumeCBM ? parseFloat(volumeCBM) : undefined // --- ADDED (v1.3) ---
+    };
 
-    // --- NEW: If subcategory is being changed, find its new parent ---
+    // --- YOUR LOGIC (Preserved) + FIX (v1.3) ---
     if (subcategoryId) {
       const subcategory = await prisma.subcategory.findUnique({
         where: { id: subcategoryId },
@@ -121,22 +137,18 @@ export const updateProduct = async (req: Request, res: Response) => {
       if (!subcategory) {
         return res.status(404).json({ success: false, message: "Subcategory not found" });
       }
-      categoryId = subcategory.categoryId;
+      
+      // --- THIS IS THE FIX for TS2561 ---
+      // We use 'connect' syntax instead of assigning the ID directly
+      data.subcategory = { connect: { id: subcategoryId } };
+      data.category = { connect: { id: subcategory.categoryId } };
+      // --- END OF FIX ---
     }
-    // --- End new logic ---
+    // --- End of logic block ---
 
     const product = await prisma.product.update({
       where: { id },
-      data: {
-        name,
-        hsCode,
-        basePrice: basePrice ? parseFloat(basePrice) : undefined,
-        benchmarkPrice: benchmarkPrice ? parseFloat(benchmarkPrice) : undefined,
-        weightKg: weightKg ? parseFloat(weightKg) : undefined,
-        defaultRoute,
-        subcategoryId,
-        categoryId, // --- NEW: Update parent category if subcategory changed ---
-      },
+      data: data,
     });
     res.status(200).json({ success: true, data: product });
   } catch (error: any) {
@@ -145,7 +157,7 @@ export const updateProduct = async (req: Request, res: Response) => {
     if (error.code === "P2025") {
       return res
         .status(404)
-        .json({ success: false, message: "Product not found" });
+        .json({ success: false, message: "Product or Subcategory not found" });
     }
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -157,7 +169,11 @@ export const deleteProduct = async (req: Request, res: Response) => {
     await prisma.product.delete({
       where: { id },
     });
-    res.status(204).send(); // No content
+    
+    // --- THIS IS THE FIX for TS2304/TS2554/TS1351 ---
+    res.status(204).send(); // Was '2nd'
+    // --- END OF FIX ---
+
   } catch (error: any) {
     logger.error("Error deleting product:", error);
     Sentry.captureException(error);

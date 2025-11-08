@@ -4,7 +4,7 @@ import prisma from "../utils/prismaClient";
 import { initiateSTKPush } from "../services/darajaService";
 import { PaymentStatus, PaymentMethod } from "@prisma/client";
 import logger from "../utils/logger";
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@sentry/node"; // --- CORRECTED SENTRY IMPORT ---
 
 /**
  * Initiates a payment for an *existing* PENDING payment record.
@@ -175,7 +175,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error(`Error processing webhook for CheckoutRequestID ${CheckoutRequestID}:`, error);
     Sentry.captureException(error, { extra: { CheckoutRequestID } });
-    res.status(200).json({ ResultCode: 1, ResultDesc: "Internal server error" });
+    res.status(500).json({ ResultCode: 1, ResultDesc: "Internal server error" });
   }
 };
 
@@ -204,6 +204,42 @@ export const getPaymentStatus = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, data: payment });
   } catch (error: any) {
     logger.error("Error fetching payment status:", error);
+    Sentry.captureException(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// --- NEW (v1.3): Get all payments for the logged-in user ---
+export const getUserPaymentHistory = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        poolMember: {
+          userId: userId,
+        },
+      },
+      include: {
+        poolMember: {
+          select: {
+            pool: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    res.status(200).json({ success: true, data: payments });
+  } catch (error: any) {
+    logger.error("Error fetching user payment history:", error);
     Sentry.captureException(error);
     res.status(500).json({ success: false, message: error.message });
   }

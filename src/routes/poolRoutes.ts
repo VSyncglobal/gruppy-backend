@@ -10,7 +10,10 @@ import {
   deletePool,
   adminUpdatePoolStatus,
 } from "../controllers/poolController";
-import { calculatePoolPricing } from "../controllers/adminPoolController";
+import { 
+  calculatePoolPricing,
+  runPoolSimulations, // --- NEW (v2.1 Engine) ---
+} from "../controllers/adminPoolController";
 
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
@@ -20,12 +23,10 @@ import {
   joinPoolSchema,
   adminUpdatePoolStatusSchema,
   calculatePoolPricingSchema,
+  runSimulationSchema, // --- NEW (v2.1 Engine) ---
 } from "../schemas/poolSchemas";
 import { requireAdmin } from "../middleware/admin";
-
-// ✅ --- NEW IMPORT ---
 import { requireVerified } from "../middleware/requireVerified";
-// ✅ --- END NEW IMPORT ---
 
 const router = Router();
 
@@ -36,13 +37,15 @@ router.get("/:id", getPoolById);
 // --- Authenticated user routes ---
 router.post(
   "/:id/join",
-  authenticate,     // 1. Must be logged in
-  requireVerified,  // 2. ✅ MUST be verified
+  authenticate,
+  requireVerified,
   validate(joinPoolSchema),
   joinPool
 );
 
 // --- Admin routes ---
+
+// The "single run" calculator
 router.post(
   "/admin/calculate-pricing",
   authenticate,
@@ -51,10 +54,22 @@ router.post(
   calculatePoolPricing
 );
 
+// --- NEW (v2.1 Engine) ---
+// The "parallel simulation" calculator (Section 8)
+router.post(
+  "/admin/run-simulation",
+  authenticate,
+  requireAdmin,
+  validate(runSimulationSchema),
+  runPoolSimulations
+);
+// --- END NEW ---
+
 router.get("/admin/all", authenticate, requireAdmin, getAllPoolsAdmin);
 
+// The "dumb" creator
 router.post(
-  "/",
+  "/", // This is POST /api/pools
   authenticate,
   requireAdmin,
   validate(createPoolSchema),
@@ -69,7 +84,7 @@ router.put(
 );
 router.delete("/:id", authenticate, requireAdmin, deletePool);
 router.patch(
-  "/:id/status",
+  "/:id/status", // --- NOTE: Changed from PUT to PATCH for semantics ---
   authenticate,
   requireAdmin,
   validate(adminUpdatePoolStatusSchema),

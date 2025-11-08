@@ -116,3 +116,43 @@ export const getAllAffiliates = async (req: Request, res: Response) => {
         res.status(500).json({ error: "Internal Server Error" });
     }
 };
+
+// src/controllers/adminController.ts
+// ... (keep existing functions getAllUsers, getUserById, etc.)
+
+// --- NEW (v1.3) ---
+export const creditUserBalance = async (req: Request, res: Response) => {
+  try {
+    const { id: userId } = req.params;
+    const { amount, reason } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        accountBalance: {
+          increment: amount,
+        },
+      },
+    });
+
+    // TODO: We should log this transaction to a new table
+    logger.info(`Admin credited user ${userId} with ${amount}. Reason: ${reason}`);
+    
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        userId: user.id, 
+        newBalance: user.accountBalance 
+      } 
+    });
+
+  } catch (error: any) {
+    logger.error("Error crediting user balance:", error);
+    Sentry.captureException(error);
+    if (error.code === 'P2025') {
+       return res.status(404).json({ success: false, message: "User not found." });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+// --- END NEW ---

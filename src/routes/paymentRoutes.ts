@@ -1,23 +1,27 @@
 // src/routes/paymentRoutes.ts
 import { Router } from "express";
 import {
-  createPayment, // ✅ FIXED: Changed from 'initiatePoolPayment'
+  createPayment,
   handlePaymentWebhook,
   getPaymentStatus,
+  getUserPaymentHistory, // --- THIS LINE FIXES THE ERROR ---
 } from "../controllers/paymentController";
-import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
-import { initiatePaymentSchema } from "../schemas/paymentSchemas";
+import { createPaymentSchema } from "../schemas/paymentSchemas";
+import { authenticate } from "../middleware/auth";
 
 const router = Router();
 
-router.post(
-  "/initiate",
-  authenticate,
-  validate(initiatePaymentSchema),
-  createPayment // ✅ FIXED: Use the new function name
-);
+// Public webhook
 router.post("/webhook", handlePaymentWebhook);
-router.get("/status/:paymentId", authenticate, getPaymentStatus);
+
+// Authenticated routes
+router.use(authenticate);
+
+router.post("/", validate(createPaymentSchema), createPayment);
+router.get("/status/:paymentId", getPaymentStatus);
+
+// --- NEW (v1.3): User's payment history ---
+router.get("/history", getUserPaymentHistory);
 
 export default router;

@@ -1,72 +1,77 @@
 // src/routes/userRoutes.ts
 import { Router } from "express";
+import { authenticate } from "../middleware/auth";
+import { validate } from "../middleware/validate";
+import {
+  changePasswordSchema,
+} from "../schemas/authSchemas";
+import {
+  // --- NEW (v1.3) ---
+  updateUserProfileSchema,
+  changeEmailSchema,
+  createAddressSchema,
+  updateAddressSchema,
+} from "../schemas/userSchemas"; // We created this file
 import {
   getUserProfile,
   updateUserProfile,
+  changeEmail,
+  changePassword,
   getMyPools,
   getUserDashboardStats,
-  changePassword, // <-- NEW
-  updatePhone,    // <-- NEW
-  updateAddress,  // <-- NEW
+  // --- NEW (v1.3) Address CRUD ---
+  getUserAddresses,
+  createAddress,
+  updateAddress,
+  deleteAddress,
 } from "../controllers/userController";
-import { authenticate } from "../middleware/auth";
-import { validate } from "../middleware/validate";
-import { 
-  updateUserSchema,
-  changePasswordSchema, // <-- NEW
-  updatePhoneSchema,    // <-- NEW
-  updateAddressSchema,  // <-- NEW
-} from "../schemas/authSchemas";
 
 const router = Router();
 
-// --- Authenticated User Routes ---
-router.get("/profile", authenticate, getUserProfile);
+// All user routes are authenticated
+router.use(authenticate);
 
-// ✅ --- NEW PROFILE MANAGEMENT ROUTES ---
+// --- Profile Routes (v1.3) ---
+// THIS IS THE ROUTE THAT IS FAILING
+router.get("/profile", getUserProfile);
 
-// (Existing name/email update)
 router.put(
   "/profile",
-  authenticate,
-  validate(updateUserSchema),
+  validate(updateUserProfileSchema),
   updateUserProfile
 );
-
 router.post(
-  "/profile/change-password",
-  authenticate,
-  validate(changePasswordSchema),
-  changePassword
+  "/profile/change-email",
+  validate(changeEmailSchema),
+  changeEmail
 );
 
-router.put(
-  "/profile/phone",
-  authenticate,
-  validate(updatePhoneSchema),
-  updatePhone
+// --- Address Routes (v1.3) ---
+router.get("/profile/addresses", getUserAddresses);
+router.post(
+  "/profile/addresses",
+  validate(createAddressSchema),
+  createAddress
 );
-
 router.put(
-  "/profile/address",
-  authenticate,
+  "/profile/addresses/:addressId",
   validate(updateAddressSchema),
   updateAddress
 );
-
-// ✅ --- END NEW PROFILE MANAGEMENT ROUTES ---
-
-// --- DASHBOARD ROUTES ---
-router.get(
-  "/my-pools", 
-  authenticate, 
-  getMyPools
+router.delete(
+  "/profile/addresses/:addressId",
+  deleteAddress
 );
 
-router.get(
-  "/dashboard-stats", 
-  authenticate, 
-  getUserDashboardStats
+// --- Pool/Stat Routes ---
+router.get("/dashboard-stats", getUserDashboardStats);
+router.get("/my-pools", getMyPools);
+
+// --- Security Routes ---
+router.post(
+  "/change-password",
+  validate(changePasswordSchema),
+  changePassword
 );
 
 export default router;
