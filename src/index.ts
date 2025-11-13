@@ -1,5 +1,4 @@
-// src/index.ts (FINAL CORRECTED VERSION)
-
+// src/index.ts
 import './instrument'; // Sentry instrument file
 import express, { Express, Request, Response, NextFunction } from 'express';
 import * as Sentry from '@sentry/node';
@@ -7,7 +6,9 @@ import logger from './utils/logger';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+// --- MODIFIED (Fix 11): Import from new file ---
+import { generalLimiter } from './middleware/rateLimit';
+// --- END MODIFICATION ---
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import cookieParser from 'cookie-parser'; 
@@ -35,7 +36,7 @@ import poolFinanceRoutes from './routes/poolFinanceRoutes';
 import locationRoutes from "./routes/locationRoutes";
 import deliveryRoutes from "./routes/deliveryRoutes";
 import adminShipmentRoutes from "./routes/adminShipmentRoutes";
-import adminBulkOrderRoutes from "./routes/adminBulkOrderRoutes"; // --- NEW (v_phase4) ---
+import adminBulkOrderRoutes from "./routes/adminBulkOrderRoutes";
 
 // Job Scheduler
 import { startJobs } from './jobs';
@@ -49,7 +50,7 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 app.use(express.json());
 
-// --- CORS Configuration ---
+// --- CORS Configuration (Unchanged) ---
 const allowedOrigins = [
   "http://localhost:3000",              // Local frontend
   "https://gruppy.store", // Production frontend
@@ -73,12 +74,10 @@ app.use(cors(corsOptions));
 app.use(helmet());
 app.use(cookieParser()); 
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per windowMs
-});
-app.use(limiter);
+// --- MODIFIED (Fix 11): Apply general limiter ---
+// (We removed the definitions from here)
+app.use("/api", generalLimiter);
+// --- END MODIFICATION ---
 
 // Database and Redis clients
 const prisma = new PrismaClient();
@@ -107,7 +106,8 @@ app.use('/api/admin/finance', poolFinanceRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/admin/shipments", adminShipmentRoutes);
-app.use("/api/admin/bulk-orders", adminBulkOrderRoutes); // --- NEW (v_phase4) ---
+app.use("/api/admin/bulk-orders", adminBulkOrderRoutes);
+
 
 // Root route
 app.get('/', (req: Request, res: Response) => {

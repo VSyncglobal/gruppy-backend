@@ -5,37 +5,41 @@ import {
   login, 
   refresh, 
   logout,
-  verifyEmail,      // <-- NEW
-  forgotPassword,   // <-- NEW
-  resetPassword     // <-- NEW
+  verifyEmail,
+  forgotPassword,
+  resetPassword
 } from "../controllers/auth";
 import { authenticate } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { 
   registerSchema, 
   loginSchema,
-  emailVerificationSchema, // <-- NEW
-  forgotPasswordSchema,    // <-- NEW
-  resetPasswordSchema      // <-- NEW
+  emailVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema
 } from "../schemas/authSchemas";
+// --- NEW (Fix 11): Import the authLimiter ---
+import { authLimiter } from "../middleware/rateLimit";
+// --- END MODIFICATION ---
 
 const router = Router();
 
 // --- Public Routes ---
-router.post("/register", validate(registerSchema), register);
-router.post("/login", validate(loginSchema), login); 
+// --- MODIFIED (Fix 11): Apply authLimiter to sensitive routes ---
+router.post("/register", authLimiter, validate(registerSchema), register);
+router.post("/login", authLimiter, validate(loginSchema), login); 
 
 // --- ✅ NEW AUTH FLOWS ---
-router.post("/verify-email", validate(emailVerificationSchema), verifyEmail);
-router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
-router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
-// --- END NEW AUTH FLOWS ---
+router.post("/verify-email", validate(emailVerificationSchema), verifyEmail); // No limiter needed here (requires token)
+router.post("/forgot-password", authLimiter, validate(forgotPasswordSchema), forgotPassword);
+router.post("/reset-password", authLimiter, validate(resetPasswordSchema), resetPassword);
+// --- END MODIFICATION ---
 
 // --- Token Management Routes ---
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 
-// --- Protected Test Route ---
+// --- Protected Test Route (Unchanged) ---
 router.get("/me", authenticate, (req, res) => {
   res.json({
     success: true,

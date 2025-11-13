@@ -1,40 +1,25 @@
 // src/jobs/finalizeReadyPools.ts
 import prisma from "../utils/prismaClient";
 import { updatePoolFinance } from "../hooks/poolFinanceHooks";
-import {
-  PoolStatus,
-  BulkOrderStatus, // --- NEW (v_phase1): Import new enum
-  PrismaClient, // --- NEW (v_phase1): Import type
-} from "@prisma/client";
+import { PoolStatus, BulkOrderStatus } from "@prisma/client";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 
-// Define the Prisma Transaction Client type
-type PrismaTx = Omit<
-  typeof prisma,
-  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
->;
-
-/**
- * --- REWRITTEN (v_phase1) ---
- * This job now finds pools that have passed their deadline and closes them,
- * finalizes their finances, and creates the admin's BulkOrder.
- */
 export async function finalizeReadyPools() {
   logger.info("Running job: finalizeReadyPools...");
   const now = new Date();
 
-  // --- MODIFIED (v_phase1): Find pools that need to be closed
+  // Find pools that are still FILLING, past their deadline, and have members
   const poolsToClose = await prisma.pool.findMany({
     where: {
-      status: PoolStatus.FILLING, // Find pools that are still open
-      deadline: { lte: now }, // But whose deadline has passed
-      currentQuantity: { gt: 0 }, // And at least one person joined
+      status: PoolStatus.FILLING,
+      deadline: { lte: now },
+      currentQuantity: { gt: 0 },
       bulkOrder: null, // And a bulk order has not been created yet
     },
     include: {
       finance: true,
-      product: true, // Need product for basePrice
+      product: true,
     },
   });
 
@@ -45,11 +30,16 @@ export async function finalizeReadyPools() {
 
   logger.info(`Found ${poolsToClose.length} pools to close and finalize.`);
 
-  // Get exchange rate once
+  // --- MODIFIED (Fix 8): Added logging for fallback ---
   const usdRateSetting = await prisma.globalSetting.findUnique({
     where: { key: "USD_TO_KES_RATE" },
   });
-  const exchangeRate = parseFloat(usdRateSetting?.value || "130.0"); // Default fallback
+
+  if (!usdRateSetting) {
+    logger.warn("USD_TO_KES_RATE not found in settings. Using default: 130.0");
+  }
+  const exchangeRate = parseFloat(usdRateSetting?.value || "130.0");
+  // --- END (Fix 8) ---
 
   for (const pool of poolsToClose) {
     if (!pool.finance || !pool.product) {
@@ -65,10 +55,10 @@ export async function finalizeReadyPools() {
 
     try {
       await prisma.$transaction(async (tx) => {
-        // 1. Call finance hook one last time to ensure all calcs are final
+        // 1. Call finance hook one last time
         await updatePoolFinance(tx, pool.id);
 
-        // 2. Get the *finalized* finance data
+        // 2. Get the finalized finance data
         const finalizedFinance = await tx.poolFinance.findUniqueOrThrow({
           where: { poolId: pool.id },
         });
@@ -88,33 +78,19 @@ export async function finalizeReadyPools() {
           },
         });
 
-        // 5. --- NEW (v_phase1): Create the Admin's BulkOrder ---
-        
-        // Calculate costs for the BulkOrder
-        // These are based on the final, settled state of the pool
-        const totalLogisticsCostKES = finalizedFinance.totalFixedCosts || 0;
-        const totalVariableCostKES =
-          (finalizedFinance.totalVariableCostPerUnit || 0) *
-          pool.currentQuantity;
-        
-        // This is the total cost for the admin to buy the goods
-        const totalOrderCostKES = totalLogisticsCostKES + totalVariableCostKES;
-        
-        // This is the supplier's price in USD
-        const costPerItemUSD = pool.product.basePrice; 
-        
-        // We cannot calculate totalTaxesKES as it's not stored separately
-        // in PoolFinance. We log 0 as a placeholder.
-        
+        // 5. Create the Admin's BulkOrder
         await tx.bulkOrder.create({
           data: {
             poolId: pool.id,
             status: BulkOrderStatus.PENDING_SUPPLIER_PAYMENT,
-            totalLogisticsCostKES: totalLogisticsCostKES,
-            totalOrderCostKES: totalOrderCostKES,
-            costPerItemUSD: costPerItemUSD,
+            totalLogisticsCostKES: finalizedFinance.totalFixedCosts || 0,
+            totalOrderCostKES:
+              (finalizedFinance.totalFixedCosts || 0) +
+              (finalizedFinance.totalVariableCostPerUnit || 0) *
+                pool.currentQuantity,
+            costPerItemUSD: pool.product.basePrice,
             exchangeRate: exchangeRate,
-            totalTaxesKES: 0, // This data is not available in PoolFinance
+            totalTaxesKES: 0, // This data is not available from PoolFinance
           },
         });
 

@@ -1,6 +1,5 @@
 // This is your new schema.prisma file
 // Phase 1: Re-architected for "Atomic Settlement" and "Admin Bulk Order" logic.
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -19,9 +18,6 @@ enum UserRole {
   AFFILIATE
   CONSUMER
 }
-
-// --- DELETED (v_phase1): OrderStatus enum is no longer needed ---
-// enum OrderStatus { ... }
 
 enum PaymentStatus {
   PENDING
@@ -47,7 +43,7 @@ enum PaymentMethod {
   MPESA
   STRIPE
   AIRTEL_MONEY
-  ACCOUNT_BALANCE // --- NEW (v_phase1): Added for internal transactions
+  ACCOUNT_BALANCE 
 }
 
 enum SourcingStatus {
@@ -65,7 +61,6 @@ enum ShipmentStatus {
   CLEARED
 }
 
-// --- NEW (v_phase1): For Admin Bulk Orders ---
 enum BulkOrderStatus {
   PENDING_SUPPLIER_PAYMENT
   ORDERED
@@ -106,11 +101,7 @@ model User {
   reviewLikes         ReviewLike[]
   addresses           UserAddress[]
   
-  // --- NEW (v_phase1): Relation to failed attempts for user history ---
   failedJoinAttempts  FailedJoinAttempt[]
-
-  // --- DELETED (v_phase1): Removed relation to old Order table ---
-  // orders              Order[]
 }
 
 model UserAddress {
@@ -149,7 +140,7 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PasswordResetToken {
@@ -169,7 +160,7 @@ model Affiliate {
   code           String   @unique
   commissionRate Float    @default(0.05)
   createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
@@ -183,21 +174,15 @@ model Payment {
   metadata                 Json?
   createdAt                DateTime      @default(now())
   
-  // --- NEW (v_phase1): Fields for tracking revenue streams ---
   deliveryFee        Float    @default(0)
   amountFromBalance  Float    @default(0)
 
-  // --- NEW (v_phase1): Relation to the PoolMember (One-to-Many) ---
   poolMemberId String?
-  poolMember   PoolMember? @relation(fields: [poolMemberId], references: [id])
+  poolMember   PoolMember? @relation(fields: [poolMemberId], references: [id], onDelete: SetNull)
 
-  // --- DELETED (v_phase1): Removed old Order relation ---
-  // orderId                  String?
-  // order                    Order?        @relation(fields: [orderId], references: [id])
-  
-  // --- DELETED (v_phase1): Removed old incorrect PoolMember relation ---
-  // poolMember               PoolMember?   @relation("PaymentToPoolMember")
-
+  // --- THIS IS THE FIX (Minor Issue 10) ---
+  @@index([status, createdAt])
+  // --- END OF FIX ---
   @@index([poolMemberId])
 }
 
@@ -219,9 +204,6 @@ model Product {
   category       Category    @relation(fields: [categoryId], references: [id])
   subcategory    Subcategory @relation(fields: [subcategoryId], references: [id])
   reviews        Review[]
-  
-  // --- DELETED (v_phase1): Removed relation to old Order table ---
-  // orders         Order[]
 }
 
 model LogisticsRoute {
@@ -249,12 +231,10 @@ model Shipment {
   totalCBM         Float          @default(0)
   totalKg          Float          @default(0)
 
-  // --- NEW (v_phase1): Added fields from upgrade plan ---
   trackingNumber   String?
   notes            String?
   departureDate    DateTime?
   arrivalDate      DateTime?
-  // --- END NEW FIELDS ---
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -294,7 +274,7 @@ model PriceCalculationLog {
   commission  Float?
   finalPrice  Float
   createdAt   DateTime @default(now())
-  user        User?    @relation("UserPriceCalcLogs", fields: [userId], references: [id])
+  user        User?    @relation("UserPriceCalcLogs", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([hsCode])
@@ -307,13 +287,9 @@ model PricingRequest {
   payload   Json
   result    Json?
   createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   pools     Pool[]
 }
-
-// --- DELETED (v_phase1): Replaced by PoolMember and BulkOrder ---
-// model Order { ... }
-// model OrderStatusHistory { ... }
 
 model PricingLog {
   id         String   @id @default(cuid())
@@ -323,7 +299,7 @@ model PricingLog {
   finalPrice Float
   userId     String?
   createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model Pool {
@@ -345,20 +321,17 @@ model Pool {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  product          Product         @relation(fields: [productId], references: [id])
-  creator          User            @relation("CreatedPools", fields: [createdById], references: [id])
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  creator          User            @relation("CreatedPools", fields: [createdById], references: [id], onDelete: Restrict)
   members          PoolMember[]
   finance          PoolFinance?    @relation("PoolToFinance")
   reviews          Review[]
   shipmentId       String?
-  shipment         Shipment?       @relation(fields: [shipmentId], references: [id])
+  shipment         Shipment?       @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   pricingRequestId String?
-  pricingRequest   PricingRequest? @relation(fields: [pricingRequestId], references: [id])
+  pricingRequest   PricingRequest? @relation(fields: [pricingRequestId], references: [id], onDelete: SetNull)
 
-  // --- NEW (v_phase1): Relation to the Admin's Bulk Order ---
   bulkOrder        BulkOrder?
-
-  // --- NEW (v_phase1): Relation for failed attempts audit trail ---
   failedJoinAttempts FailedJoinAttempt[]
 
   @@index([status])
@@ -367,35 +340,33 @@ model Pool {
   @@index([shipmentId])
 }
 
-// --- NEW (v_phase1): Admin's Bulk Order table ---
 model BulkOrder {
   id                      String        @id @default(cuid())
   poolId                  String        @unique
-  pool                    Pool          @relation(fields: [poolId], references: [id])
+  pool                    Pool          @relation(fields: [poolId], references: [id], onDelete: Cascade)
   status                  BulkOrderStatus @default(PENDING_SUPPLIER_PAYMENT)
-  totalOrderCostKES       Float // (costPerItem * quantity) @ exchangeRate
-  totalLogisticsCostKES   Float // (PoolFinance.totalFixedCosts)
-  totalTaxesKES           Float // (Calculated taxes for the bulk order)
+  totalOrderCostKES       Float
+  totalLogisticsCostKES   Float
+  totalTaxesKES           Float
   costPerItemUSD          Float
   exchangeRate            Float
   createdAt               DateTime      @default(now())
   updatedAt               DateTime      @updatedAt
 }
 
-// --- NEW (v_phase1): Audit table for failed/expired joins ---
 model FailedJoinAttempt {
   id                String        @id @default(cuid())
-  reason            String // e.g., "EXPIRED_PENDING", "USER_CANCELED", "NEW_JOIN_ATTEMPT"
+  reason            String
   userId            String
-  user              User          @relation(fields: [userId], references: [id])
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   poolId            String
-  pool              Pool          @relation(fields: [poolId], references: [id])
+  pool              Pool          @relation(fields: [poolId], references: [id], onDelete: Cascade)
   quantity          Int
-  totalAmount       Float // Total value of the attempt (items + delivery)
+  totalAmount       Float
   deliveryFee       Float
   amountFromBalance Float
-  paymentMethod     PaymentMethod // The method that was pending/failed
-  providerMetadata  Json? // The error response from M-Pesa, etc.
+  paymentMethod     PaymentMethod
+  providerMetadata  Json?
   createdAt         DateTime      @default(now())
 
   @@index([userId])
@@ -422,7 +393,7 @@ model PoolFinance {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  pool          Pool            @relation("PoolToFinance", fields: [poolId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  pool          Pool            @relation("PoolToFinance", fields: [poolId], references: [id], onDelete: Cascade)
   AdminEarnings AdminEarnings[]
 }
 
@@ -432,16 +403,11 @@ model PoolMember {
   userId   String
   quantity Int      @default(1)
   joinedAt DateTime @default(now())
-  user     User     @relation(fields: [userId], references: [id])
-  pool     Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pool     Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
-  // --- NEW (v_phase1): Replaced one-to-one with one-to-many ---
   payments Payment[]
   
-  // --- DELETED (v_phase1): Removed old one-to-one relation ---
-  // paymentId String?  @unique
-  // payment   Payment? @relation("PaymentToPoolMember", fields: [paymentId], references: [id])
-
   @@index([poolId])
   @@index([userId])
 }
@@ -463,7 +429,7 @@ model AdminEarnings {
   amount        Float
   description   String?
   createdAt     DateTime    @default(now())
-  poolFinance   PoolFinance @relation(fields: [poolFinanceId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  poolFinance   PoolFinance @relation(fields: [poolFinanceId], references: [id], onDelete: Cascade)
 
   @@index([poolFinanceId])
 }
@@ -479,7 +445,7 @@ model Subcategory {
   id         String    @id @default(cuid())
   name       String
   categoryId String
-  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   products   Product[]
 
   @@index([categoryId])
@@ -491,11 +457,11 @@ model Review {
   comment   String?
   createdAt DateTime @default(now())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade) // --- Changed to Cascade delete
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId String?
-  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull) // --- Changed to SetNull
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   poolId    String?
-  pool      Pool?    @relation(fields: [poolId], references: [id], onDelete: SetNull) // --- Changed to SetNull
+  pool      Pool?    @relation(fields: [poolId], references: [id], onDelete: SetNull)
   likes     ReviewLike[]
   parentId  String?     @map("parent_id")
   parent    Review?     @relation("ReviewReplies", fields: [parentId], references: [id], onDelete: Cascade)
@@ -534,7 +500,7 @@ model AiSuggestionLog {
   confidence         String
   reasoning          String?
   createdAt          DateTime @default(now())
-  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull) // --- Changed to SetNull
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([hsCode])
