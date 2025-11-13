@@ -408,8 +408,13 @@ model PoolMember {
 
   payments Payment[]
   
+  // --- THIS IS THE FIX (Concern 9) ---
+  isSettled Boolean  @default(false)
+  // --- END OF FIX ---
+
   @@index([poolId])
   @@index([userId])
+  @@index([isSettled]) // Optional: Add index if you query this often
 }
 
 model DeletionLog {

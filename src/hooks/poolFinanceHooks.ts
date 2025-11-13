@@ -6,7 +6,7 @@ import {
   PaymentStatus,
   PoolStatus,
   Prisma,
-  PaymentMethod, // --- THIS IS THE FIX (v_phase1) ---
+  PaymentMethod,
 } from "@prisma/client";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
@@ -103,10 +103,11 @@ export async function updatePoolFinance(tx: PrismaTx, poolId: string) {
 }
 
 /**
- * --- NEW (v_phase1) ---
+ * --- MODIFIED (Concern 9) ---
  * This is the central function for settling a join.
  * It updates the pool's quantity and then calls updatePoolFinance.
  * This is called *after* 100% of payment is confirmed.
+ * It is now idempotent and will not run twice for the same member.
  */
 export async function triggerPoolSettlement(
   tx: PrismaTx,
@@ -126,17 +127,16 @@ export async function triggerPoolSettlement(
       include: { pool: true },
     });
 
-    // --- Safety Check ---
-    // Check if the pool member is already "settled" (e.g., if a webhook fires twice)
-    // We do this by checking if the pool quantity *already* includes this member's quantity.
-    // This requires a fresh read of the pool, not the one from the include.
-    const freshPool = await tx.pool.findUniqueOrThrow({
-      where: { id: poolMember.poolId },
-    });
-    
-    // This logic is complex. A simpler check is to see if ALL payments for this member are SUCCESS.
-    // The poolController already handles "re-joins", so this hook's job is just to settle.
-    // Let's assume for now that if this is called, it's intended to settle.
+    // --- IDEMPOTENCY FIX (Concern 9) ---
+    // Check if this member has already been settled.
+    // This prevents race conditions (e.g., a webhook firing twice).
+    if (poolMember.isSettled) {
+      logger.warn(
+        `SETTLEMENT: PoolMember ID: ${poolMemberId} is already settled. Skipping duplicate execution.`
+      );
+      return; // Already done, just exit gracefully.
+    }
+    // --- END OF FIX ---
 
     const pool = poolMember.pool;
     const quantityToAdd = poolMember.quantity;
@@ -148,15 +148,25 @@ export async function triggerPoolSettlement(
     const newProgress = (newQuantity / pool.targetQuantity) * 100;
     const newCumulativeValue = newQuantity * pool.pricePerUnit;
 
-    const updatedPool = await tx.pool.update({
-      where: { id: pool.id },
-      data: {
-        currentQuantity: newQuantity,
-        status: newStatus,
-        progress: newProgress,
-        cumulativeValue: newCumulativeValue,
-      },
-    });
+    // --- MODIFIED (Concern 9): Update pool and member in parallel ---
+    const [updatedPool, _] = await Promise.all([
+      // A. Update the Pool
+      tx.pool.update({
+        where: { id: pool.id },
+        data: {
+          currentQuantity: newQuantity,
+          status: newStatus,
+          progress: newProgress,
+          cumulativeValue: newCumulativeValue,
+        },
+      }),
+      // B. Mark the PoolMember as settled
+      tx.poolMember.update({
+        where: { id: poolMember.id },
+        data: { isSettled: true },
+      }),
+    ]);
+    // --- END OF MODIFICATION ---
 
     // 2. Call the finance hook to recalculate all financials
     await updatePoolFinance(tx, pool.id);
