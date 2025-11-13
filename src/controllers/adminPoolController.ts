@@ -226,7 +226,7 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
     baseCostPerUnit,
     hsCode,
     targetQuantity,
-    platformFeeRate, // This param is now overridePlatformMargin
+    platformMargin // This param is now overridePlatformMargin
   } = req.body;
 
   const MAX_SIMULATION_RUNS = 1000;
@@ -266,7 +266,7 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
 
     const qRange = targetQuantity || [100, 100, 1];
     // --- MODIFIED (v_phase2): Uses new margin keys ---
-    const feeRange = platformFeeRate || [
+    const feeRange = platformMargin || [
       getSettings(globalSettings).PLATFORM_MARGIN,
       getSettings(globalSettings).PLATFORM_MARGIN,
       0.01, // Default step of 1%
