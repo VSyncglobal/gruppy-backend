@@ -21,10 +21,12 @@ export const logisticsRouteSchema = z.object({
     clearingAgentFee: z.coerce.number().nonnegative(),
     inlandTransportCost: z.coerce.number().nonnegative(),
     containerDeposit: z.coerce.number().nonnegative(),
-    marineInsuranceRate: z.coerce.number().min(0, "Rate must be 0 or positive").max(1, "Rate must be a decimal (e.g., 0.01 for 1%)"),
+    marineInsuranceRate: z.coerce
+      .number()
+      .min(0, "Rate must be 0 or positive")
+      .max(1, "Rate must be a decimal (e.g., 0.01 for 1%)"),
   }),
 });
-
 
 // For creating/updating KRA tax rates
 export const kraRateSchema = z.object({
@@ -35,21 +37,36 @@ export const kraRateSchema = z.object({
     idf_rate: z.number().nonnegative(),
     vat_rate: z.number().nonnegative(),
     description: z.string().optional(),
-    effectiveFrom: z.string().datetime({ message: "Effective date must be a valid ISO date string" }),
+    effectiveFrom: z
+      .string()
+      .datetime({ message: "Effective date must be a valid ISO date string" }),
   }),
 });
 
 // For promoting a user to admin
 export const promoteUserSchema = z.object({
-    body: z.object({
-        userId: z.string().min(1, "A valid userId is required"),
-    })
+  body: z.object({
+    userId: z.string().min(1, "A valid userId is required"),
+  }),
 });
 
 // For creating a new affiliate
 export const createAffiliateSchema = z.object({
-    body: z.object({
-        userId: z.string().min(1, "A valid userId is required"),
-        commissionRate: z.number().positive().optional(),
-    })
+  body: z.object({
+    userId: z.string().min(1, "A valid userId is required"),
+    commissionRate: z.number().positive().optional(),
+  }),
+});
+
+// --- NEW (v_phase6): Schema for updating an affiliate ---
+export const updateAffiliateSchema = z.object({
+  params: z.object({
+    id: z.string().cuid("Invalid affiliate ID"),
+  }),
+  body: z.object({
+    commissionRate: z.coerce
+      .number()
+      .positive("Commission rate must be a positive number")
+      .optional(),
+  }),
 });

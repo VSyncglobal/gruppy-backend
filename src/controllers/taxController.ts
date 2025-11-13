@@ -11,29 +11,25 @@ export async function getTaxRates(req: Request, res: Response) {
       orderBy: { createdAt: "desc" },
     });
     res.json({ success: true, data: rates });
-  } catch (error) {
+  } catch (error: any) { // --- FIX: Explicitly type error ---
     console.error("Error fetching tax rates:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
 
-// ✅ --- CORRECTION FOR addTaxRate --- ✅
 export async function addTaxRate(req: Request, res: Response) {
   try {
     const {
       hsCode,
-      duty_rate, // FIX: Use snake_case
-      rdl_rate,  // FIX: Use snake_case
-      idf_rate,  // FIX: Use snake_case
-      vat_rate,  // FIX: Use snake_case
+      duty_rate,
+      rdl_rate,
+      idf_rate,
+      vat_rate,
       description,
       effectiveFrom,
       effectiveTo,
     } = req.body;
 
-    // ✅ FIX: The schema already validates these as numbers.
-    // We can remove parseFloat completely.
-    // The `|| 0` is still good practice.
     const rate = await prisma.kRARate.create({
       data: {
         hsCode,
@@ -48,7 +44,7 @@ export async function addTaxRate(req: Request, res: Response) {
     });
 
     res.json({ success: true, data: rate });
-  } catch (error) {
+  } catch (error: any) { // --- FIX: Correctly formed catch block ---
     logger.error("Error adding tax rate:", error);
     Sentry.captureException(error);
     // Add a specific check for the unique constraint
@@ -59,15 +55,14 @@ export async function addTaxRate(req: Request, res: Response) {
   }
 }
 
-// ✅ --- CORRECTION FOR updateTaxRate --- ✅
 export async function updateTaxRate(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const {
-      duty_rate, // FIX: Use snake_case
-      rdl_rate,  // FIX: Use snake_case
-      idf_rate,  // FIX: Use snake_case
-      vat_rate,  // FIX: Use snake_case
+      duty_rate,
+      rdl_rate,
+      idf_rate,
+      vat_rate,
       description,
       effectiveTo,
     } = req.body;
@@ -75,7 +70,6 @@ export async function updateTaxRate(req: Request, res: Response) {
      const updated = await prisma.kRARate.update({
       where: { id },
       data: {
-        // FIX: Use the correct variables and fallback to 0
         duty_rate: duty_rate || 0,
         rdl_rate: rdl_rate || 0,
         idf_rate: idf_rate || 0,
@@ -86,9 +80,46 @@ export async function updateTaxRate(req: Request, res: Response) {
     });
 
     res.json({ success: true, data: updated });
-  } catch (error) {
+  } catch (error: any) { // --- FIX: Correctly formed catch block ---
     logger.error("Error updating tax rate:", error);
     Sentry.captureException(error);
+    if ((error as any).code === "P2025") {
+      return res.status(404).json({ success: false, message: "Tax rate not found" });
+    }
     res.status(500).json({ error: "Internal Server Error" });
+  }
+}
+
+/**
+ * --- NEW (v_phase2): Admin: Delete a tax rate ---
+ */
+export async function deleteTaxRate(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    await prisma.kRARate.delete({
+      where: { id },
+    });
+
+    res.status(204).send(); // No Content
+  } catch (error: any) { // --- FIX: Correctly formed catch block ---
+    logger.error(`Error deleting tax rate ${req.params.id}:`, error);
+    Sentry.captureException(error);
+    if (error.code === "P2025") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Tax rate not found" });
+    }
+    // Handle foreign key constraint (e.g., if a pool calculation depends on this rate)
+    if (error.code === "P2003") {
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message:
+            "Cannot delete rate, it is still referenced by other records.",
+        });
+    }
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 }

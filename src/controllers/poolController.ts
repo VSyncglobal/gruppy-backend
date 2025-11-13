@@ -3,19 +3,19 @@ import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
-import { PoolStatus, PaymentStatus, GlobalSetting, Prisma } from "@prisma/client";
-import { updatePoolFinance } from "../hooks/poolFinanceHooks";
+import {
+  PoolStatus,
+  PaymentStatus,
+  Prisma,
+  PaymentMethod, // --- NEW (v_phase1) ---
+} from "@prisma/client";
+import {
+  triggerPoolSettlement, // --- NEW (v_phase1) ---
+  logFailedJoinAttempt, // --- NEW (v_phase1) ---
+} from "../hooks/poolFinanceHooks";
+import { initiateSTKPush } from "../services/darajaService"; // --- NEW (v_phase1) ---
 
-const getSettings = (settings: GlobalSetting[]) => {
-  const settingsMap = new Map(settings.map((s) => [s.key, parseFloat(s.value)]));
-  return {
-    CONTINGENCY_FEE_RATE: settingsMap.get("CONTINGENCY_FEE_RATE") || 0.02,
-  };
-};
-
-/**
- * --- MODIFIED (v1.3): Get all pools (public) with Filtering & Search ---
- */
+// --- UNCHANGED ---
 export const getAllPools = async (req: Request, res: Response) => {
   try {
     const { search, category, sort } = req.query;
@@ -25,30 +25,30 @@ export const getAllPools = async (req: Request, res: Response) => {
       deadline: { gt: new Date() },
     };
 
-    if (search && typeof search === 'string') {
+    if (search && typeof search === "string") {
       where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { product: { name: { contains: search, mode: 'insensitive' } } },
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { product: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
 
-    if (category && typeof category === 'string') {
-      if (typeof where.product !== 'object' || where.product === null) {
+    if (category && typeof category === "string") {
+      if (typeof where.product !== "object" || where.product === null) {
         where.product = {};
       }
       where.product.category = {
-        name: { equals: category, mode: 'insensitive' },
+        name: { equals: category, mode: "insensitive" },
       };
     }
 
-    let orderBy: Prisma.PoolOrderByWithRelationInput = { deadline: 'asc' };
-    if (sort === 'newest') {
-      orderBy = { createdAt: 'desc' };
-    } else if (sort === 'price_asc') {
-      orderBy = { pricePerUnit: 'asc' };
-    } else if (sort === 'price_desc') {
-      orderBy = { pricePerUnit: 'desc' };
+    let orderBy: Prisma.PoolOrderByWithRelationInput = { deadline: "asc" };
+    if (sort === "newest") {
+      orderBy = { createdAt: "desc" };
+    } else if (sort === "price_asc") {
+      orderBy = { pricePerUnit: "asc" };
+    } else if (sort === "price_desc") {
+      orderBy = { pricePerUnit: "desc" };
     }
 
     const pools = await prisma.pool.findMany({
@@ -67,7 +67,7 @@ export const getAllPools = async (req: Request, res: Response) => {
   }
 };
 
-// Get all pools (admin) - Unchanged
+// --- UNCHANGED ---
 export const getAllPoolsAdmin = async (req: Request, res: Response) => {
   try {
     const pools = await prisma.pool.findMany({
@@ -76,6 +76,7 @@ export const getAllPoolsAdmin = async (req: Request, res: Response) => {
         members: {
           include: {
             user: { select: { id: true, name: true, email: true } },
+            payments: true, // --- (v_phase1) Show payments for each member
           },
         },
         finance: true,
@@ -92,9 +93,7 @@ export const getAllPoolsAdmin = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * --- MODIFIED (v1.3): Get single pool (public/user) with Anonymized Members ---
- */
+// --- MODIFIED (v_phase1): Now only shows *successful* members ---
 export const getPoolById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -104,9 +103,12 @@ export const getPoolById = async (req: Request, res: Response) => {
         product: true,
         finance: true,
         members: {
+          // By default, this now ONLY includes successful members,
+          // because pending/failed attempts are deleted.
           select: {
             userId: true,
             user: { select: { name: true } },
+            quantity: true,
           },
         },
       },
@@ -116,22 +118,24 @@ export const getPoolById = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Pool not found" });
     }
 
-    const anonymizedMembers = pool.members.map(member => {
-      const firstName = member.user.name.split(' ')[0];
-      const lastNameInitial = member.user.name.split(' ')[1]?.[0] || '';
+    // Anonymize member names for public view
+    const anonymizedMembers = pool.members.map((member) => {
+      const firstName = member.user.name.split(" ")[0];
+      const lastNameInitial = member.user.name.split(" ")[1]?.[0] || "";
       return {
-        name: `${firstName} ${lastNameInitial}${lastNameInitial ? '.' : ''}`
+        name: `${firstName} ${lastNameInitial}${lastNameInitial ? "." : ""}`,
+        quantity: member.quantity,
       };
     });
-    
+
     const { members, ...poolData } = pool;
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       data: {
         ...poolData,
         members: anonymizedMembers,
-      } 
+      },
     });
   } catch (error: any) {
     logger.error("Error fetching pool by id:", error);
@@ -140,27 +144,30 @@ export const getPoolById = async (req: Request, res: Response) => {
   }
 };
 
-// src/controllers/poolController.ts
-// ... (keep other functions: getSettings, getAllPools, etc.) ...
-// src/controllers/poolController.ts
-// ... (keep other functions: getSettings, getAllPools, etc.) ...
-
-// --- MODIFIED (v1.3): Implements Account Balance Deduction ---
+/**
+ * --- REWRITTEN (v_phase1): Implements "Atomic Settlement" ---
+ * Handles "Delete and Replace" for pending joins and "Split Payment" for balance.
+ */
 export const joinPool = async (req: Request, res: Response) => {
   const { id: poolId } = req.params;
-  const { quantity, method, deliveryFee } = req.body;
+  const { quantity, method, deliveryFee, phone } = req.body as {
+    quantity: number;
+    method: PaymentMethod;
+    deliveryFee: number;
+    phone?: string; // Phone is now required for MPESA
+  };
   const userId = (req as any).user.id;
 
-  let paymentStatus: PaymentStatus = PaymentStatus.PENDING;
-  
-  // --- THIS IS THE FIX ---
-  // We must initialize 'message' with a default value.
-  let message: string = "Pool join processed.";
-  // --- END FIX ---
+  if (method === PaymentMethod.MPESA && !phone) {
+    return res.status(400).json({
+      success: false,
+      message: "A phone number is required for M-Pesa payments.",
+    });
+  }
 
   try {
-    const { payment, pool } = await prisma.$transaction(async (tx) => {
-      // 1. Get pool, product, and user data
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Get pool and user data
       const pool = await tx.pool.findUniqueOrThrow({
         where: { id: poolId },
       });
@@ -175,121 +182,167 @@ export const joinPool = async (req: Request, res: Response) => {
       if (pool.deadline < new Date()) {
         throw new Error("This pool's deadline has passed.");
       }
-      
-      // 3. Check for existing SUCCESSFUL memberships (unchanged)
-      const existingSuccessMember = await tx.poolMember.findFirst({
-        where: { userId: userId, poolId: poolId, payment: { status: PaymentStatus.SUCCESS } },
-      });
-      if (existingSuccessMember) {
-        throw new Error("You are already a confirmed member of this pool.");
-      }
 
-      // 4. --- NEW BALANCE LOGIC ---
-      const totalItemCost = pool.pricePerUnit * quantity;
-      const totalCost = totalItemCost + (deliveryFee || 0); // Use deliveryFee
-
-      const amountToDeduct = Math.min(user.accountBalance, totalCost);
-      const remainingToPay = totalCost - amountToDeduct;
-
-      if (amountToDeduct > 0) {
-        await tx.user.update({
-          where: { id: userId },
-          data: { accountBalance: { decrement: amountToDeduct } },
-        });
-        logger.info(`Deducted ${amountToDeduct} from user ${userId} balance.`);
-      }
-      
-      // If balance covered everything, mark as SUCCESS
-      if (remainingToPay <= 0) {
-        paymentStatus = PaymentStatus.SUCCESS;
-        message = "Pool joined successfully! Your account balance covered the full cost.";
-        logger.info(`User ${userId} joined pool ${poolId} fully with account balance.`);
-      } else {
-        paymentStatus = PaymentStatus.PENDING;
-        // Also improve the message
-        message = `Pool joined. ${amountToDeduct > 0 ? `Used ${amountToDeduct} from balance. ` : ''}Please complete the remaining payment of ${remainingToPay}.`;
-      }
-      // --- END NEW BALANCE LOGIC ---
-
-      // 5. Create the Payment record
-      const payment = await tx.payment.create({
-        data: {
-          amount: remainingToPay, // Pay the remainder
-          status: paymentStatus, // Can be PENDING or SUCCESS
-          method: method,
-        },
+      // 3. --- "Delete and Replace" Logic ---
+      // Find any *existing* join attempts by this user for this pool.
+      const existingAttempts = await tx.poolMember.findMany({
+        where: { userId, poolId },
+        include: { payments: true },
       });
 
-      // 6. Create the PoolMember and link it to the Payment
-      await tx.poolMember.create({
+      for (const attempt of existingAttempts) {
+        // An attempt is "unsettled" if it has 0 payments or no SUCCESSFUL payments
+        const isSettled = attempt.payments.some(
+          (p) => p.status === PaymentStatus.SUCCESS
+        );
+
+        if (!isSettled) {
+          logger.warn(
+            `User ${userId} has an unsettled attempt ${attempt.id} for pool ${poolId}. Overriding.`
+          );
+          // 4. Log the failed attempt for auditing
+          await logFailedJoinAttempt(tx, {
+            reason: "NEW_JOIN_ATTEMPT_OVERRIDE",
+            userId: attempt.userId,
+            poolId: attempt.poolId,
+            quantity: attempt.quantity,
+            payments: attempt.payments,
+          });
+
+          // 5. Delete the old PoolMember (this will cascade-delete its payments)
+          await tx.poolMember.delete({ where: { id: attempt.id } });
+        } else {
+          // If they have a *settled* attempt, they can't join again.
+          throw new Error("You are already a confirmed member of this pool.");
+        }
+      }
+
+      // 6. --- "Atomic Settlement" Logic ---
+      const totalCost = pool.pricePerUnit * quantity + (deliveryFee || 0);
+
+      // 7. Create the PoolMember *first*
+      const poolMember = await tx.poolMember.create({
         data: {
           poolId,
           userId,
           quantity,
-          paymentId: payment.id,
         },
       });
 
-      // 7. Update the pool's quantity (ONLY if payment was successful)
-      let newQuantity = pool.currentQuantity;
-      let newStatus: PoolStatus = pool.status;
-      let progress = pool.progress;
-      let cumulativeValue = pool.cumulativeValue;
-      
-      if (paymentStatus === PaymentStatus.SUCCESS) {
-        newQuantity = pool.currentQuantity + quantity;
-        if (newQuantity >= pool.targetQuantity) {
-          newStatus = PoolStatus.CLOSED;
-        }
-        progress = (newQuantity / pool.targetQuantity) * 100;
-        cumulativeValue = newQuantity * pool.pricePerUnit;
-      }
-      
-      const updatedPool = await tx.pool.update({
-        where: { id: poolId },
-        data: {
-          currentQuantity: newQuantity,
-          status: newStatus,
-          progress: progress,
-          cumulativeValue: cumulativeValue,
-        },
-      });
+      // 8. Calculate payment split
+      const amountFromBalance = Math.min(user.accountBalance, totalCost);
+      const remainingToPay = totalCost - amountFromBalance;
+      let deliveryFeeLogged = false;
 
-      // 8. Call the finance hook (only if successful)
-      if (paymentStatus === PaymentStatus.SUCCESS) {
-        await updatePoolFinance(tx, poolId);
+      // 9. Create payment record for Account Balance portion (if any)
+      if (amountFromBalance > 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { accountBalance: { decrement: amountFromBalance } },
+        });
+
+        await tx.payment.create({
+          data: {
+            amount: amountFromBalance,
+            method: PaymentMethod.ACCOUNT_BALANCE,
+            status: PaymentStatus.SUCCESS,
+            poolMemberId: poolMember.id,
+            deliveryFee: deliveryFee || 0,
+            amountFromBalance: amountFromBalance,
+          },
+        });
+        deliveryFeeLogged = true; // Mark delivery fee as logged
       }
 
-      return { payment, pool: updatedPool };
+      // 10. Check if further payment is needed
+      if (remainingToPay <= 0) {
+        // --- CASE A: Fully paid by balance ---
+        await triggerPoolSettlement(tx, poolMember.id);
+        return {
+          status: PaymentStatus.SUCCESS,
+          message:
+            "Pool joined successfully! Your account balance covered the full cost.",
+        };
+      } else {
+        // --- CASE B: Partial/Full external payment needed ---
+        const pendingPayment = await tx.payment.create({
+          data: {
+            amount: remainingToPay,
+            method: method,
+            status: PaymentStatus.PENDING,
+            poolMemberId: poolMember.id,
+            deliveryFee: deliveryFeeLogged ? 0 : deliveryFee || 0, // Log fee only if not already logged
+            amountFromBalance: amountFromBalance,
+          },
+        });
+
+        return {
+          status: PaymentStatus.PENDING,
+          message: `Pool join initiated. ${
+            amountFromBalance > 0
+              ? `Used ${amountFromBalance} from balance. `
+              : ""
+          }Please complete the remaining payment of ${remainingToPay}.`,
+          pendingPayment,
+        };
+      }
     });
 
-    if (pool.status === PoolStatus.CLOSED) {
-      logger.info(`Pool ${poolId} has been filled by user ${userId} and is now CLOSED.`);
+    // 11. --- Post-Transaction ---
+    if (result.status === PaymentStatus.SUCCESS) {
+      // Fully paid by balance
+      return res.status(201).json({ success: true, message: result.message });
+    } else {
+      // Needs external payment
+      const { pendingPayment, message } = result;
+
+      if (method === PaymentMethod.MPESA && pendingPayment && phone) {
+        // Initiate STK Push
+        const stkResponse = await initiateSTKPush(
+          pendingPayment.amount,
+          phone,
+          pendingPayment.id // Use our internal *payment* ID
+        );
+
+        // Update payment with the provider's transaction ID
+        await prisma.payment.update({
+          where: { id: pendingPayment.id },
+          data: { providerTransactionId: stkResponse.checkoutRequestID },
+        });
+
+        return res.status(200).json({
+          success: true,
+          message:
+            "STK push initiated. Please complete the transaction on your phone.",
+          paymentId: pendingPayment.id,
+          checkoutRequestID: stkResponse.checkoutRequestID,
+        });
+      } else {
+        // Other payment methods (Stripe, etc.)
+        return res.status(201).json({
+          success: true,
+          message: message,
+          data: {
+            paymentId: pendingPayment?.id,
+            amount: pendingPayment?.amount,
+            status: pendingPayment?.status,
+          },
+        });
+      }
     }
-
-    res.status(201).json({
-      success: true,
-      message: message, // Use the dynamic message
-      data: {
-        paymentId: payment.id,
-        amount: payment.amount, // This is the remaining amount to pay
-        status: payment.status,
-      },
-    });
-
-  } catch (error: any) { 
+  } catch (error: any) {
     logger.error(`Error joining pool ${poolId} for user ${userId}:`, error);
     Sentry.captureException(error, {
       extra: { poolId, userId, quantity, method },
     });
-    res.status(400).json({ success: false, message: error.message || "Could not join pool." });
+    res
+      .status(400)
+      .json({ success: false, message: error.message || "Could not join pool." });
   }
 };
 
-// ... (keep other functions: createPool, updatePool, etc.) ...
-// --- MODIFIED (v2.9 Logging) ---
-// Admin: Create a new pool
-// This function is now "dumb" and accepts pre-calculated costs.
+// --- UNCHANGED ---
+// This logic is still sound. It just creates the "plan" for the pool.
 export const createPool = async (req: Request, res: Response) => {
   try {
     const {
@@ -304,12 +357,12 @@ export const createPool = async (req: Request, res: Response) => {
       totalFixedCosts,
       totalVariableCostPerUnit,
       pricingRequestId,
-      debugData
+      debugData,
     } = req.body;
 
     const createdPool = await prisma.$transaction(async (tx) => {
       const product = await tx.product.findUniqueOrThrow({
-          where: { id: productId },
+        where: { id: productId },
       });
 
       const pool = await tx.pool.create({
@@ -324,7 +377,7 @@ export const createPool = async (req: Request, res: Response) => {
           deadline: new Date(deadline),
           createdById: (req as any).user.id,
           status: PoolStatus.FILLING,
-          pricingRequestId: pricingRequestId
+          pricingRequestId: pricingRequestId,
         },
       });
 
@@ -332,13 +385,13 @@ export const createPool = async (req: Request, res: Response) => {
         data: {
           poolId: pool.id,
           baseCostPerUnit: totalVariableCostPerUnit,
-          benchmarkPricePerUnit: product.benchmarkPrice, 
+          benchmarkPricePerUnit: product.benchmarkPrice,
           totalFixedCosts: parseFloat(totalFixedCosts),
           totalVariableCostPerUnit: parseFloat(totalVariableCostPerUnit),
-          calculationDebugData: debugData || null
+          calculationDebugData: debugData || null,
         },
       });
-      
+
       return pool;
     });
 
@@ -346,8 +399,8 @@ export const createPool = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error("Error creating pool:", error);
     Sentry.captureException(error);
-    if (error.name === 'NotFoundError' || error.code === 'P2025') {
-       return res
+    if (error.name === "NotFoundError" || error.code === "P2025") {
+      return res
         .status(404)
         .json({ success: false, message: "Could not find Product." });
     }
@@ -355,8 +408,7 @@ export const createPool = async (req: Request, res: Response) => {
   }
 };
 
-// --- THIS FUNCTION WAS MISSING ---
-// Admin: Update a pool
+// --- UNCHANGED ---
 export const updatePool = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -364,7 +416,7 @@ export const updatePool = async (req: Request, res: Response) => {
       title,
       description,
       imageUrls,
-      pricePerUnit, 
+      pricePerUnit,
       targetQuantity,
       minJoiners,
       deadline,
@@ -377,7 +429,9 @@ export const updatePool = async (req: Request, res: Response) => {
         description,
         imageUrls,
         pricePerUnit: pricePerUnit ? parseFloat(pricePerUnit) : undefined,
-        targetQuantity: targetQuantity ? parseInt(targetQuantity, 10) : undefined,
+        targetQuantity: targetQuantity
+          ? parseInt(targetQuantity, 10)
+          : undefined,
         minJoiners: minJoiners ? parseInt(minJoiners, 10) : undefined,
         deadline: deadline ? new Date(deadline) : undefined,
       },
@@ -388,38 +442,57 @@ export const updatePool = async (req: Request, res: Response) => {
     logger.error("Error updating pool:", error);
     Sentry.captureException(error);
     if (error.code === "P2025") {
-      return res.status(404).json({ success: false, message: "Pool or Product not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Pool or Product not found" });
     }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// --- THIS FUNCTION WAS MISSING ---
-// Admin: Delete a pool
+/**
+ * --- REWRITTEN (v_phase1): Uses new schema for safe deletion ---
+ * Deletes a pool and all its related, non-audited data.
+ */
 export const deletePool = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
     await prisma.$transaction(async (tx) => {
-      await tx.review.deleteMany({ where: { poolId: id }});
+      // 1. Clean up related data that does not cascade
+      // (Reviews are set to SetNull, but we'll delete them)
+      await tx.review.deleteMany({ where: { poolId: id } });
+      
+      // 2. Find all members of the pool
+      const members = await tx.poolMember.findMany({
+        where: { poolId: id },
+        select: { id: true },
+      });
+      const memberIds = members.map((m) => m.id);
 
-      const membersToDelete = await tx.poolMember.findMany({ where: { poolId: id }});
-      const paymentIdsToDelete = membersToDelete
-        .map(m => m.paymentId)
-        .filter(pid => pid !== null) as string[];
+      if (memberIds.length > 0) {
+        // 3. Delete all payments associated with those members
+        //    (This is safer than relying on cascade if relation is optional)
+        await tx.payment.deleteMany({
+          where: { poolMemberId: { in: memberIds } },
+        });
 
-      if (paymentIdsToDelete.length > 0) {
-        await tx.payment.deleteMany({ where: { id: { in: paymentIdsToDelete } } });
-      }
-
-      await tx.poolMember.deleteMany({ where: { poolId: id } });
-
-      // Check if poolFinance exists before deleting
-      const finance = await tx.poolFinance.findUnique({ where: { poolId: id } });
-      if (finance) {
-        await tx.poolFinance.delete({ where: { poolId: id } });
+        // 4. Delete all members
+        await tx.poolMember.deleteMany({
+          where: { id: { in: memberIds } },
+        });
       }
       
+      // 5. Delete associated finance record (onDelete: Cascade *should* handle this, but explicit is safer)
+      await tx.poolFinance.delete({ where: { poolId: id } });
+
+      // 6. Delete associated bulk order (if it exists)
+      await tx.bulkOrder.delete({ where: { poolId: id } });
+      
+      // 7. Delete associated failed attempts (if any)
+      await tx.failedJoinAttempt.deleteMany({ where: { poolId: id }});
+
+      // 8. Finally, delete the pool itself
       await tx.pool.delete({
         where: { id },
       });
@@ -430,22 +503,23 @@ export const deletePool = async (req: Request, res: Response) => {
     logger.error("Error deleting pool:", error);
     Sentry.captureException(error);
     if (error.code === "P2025") {
-      return res.status(404).json({ success: false, message: "Pool not found" });
+      // This will catch if the pool, finance, or bulk order doesn't exist
+      return res.status(404).json({ success: false, message: "Pool or related data not found" });
     }
     if (error.code === "P2003" || error.code === "P2014") {
       return res.status(409).json({
         success: false,
-        message: "Cannot delete pool, check foreign key constraints (e.g., reviews, orders).",
+        message:
+          "Cannot delete pool, it is still linked to other data.",
       });
     }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// --- THIS FUNCTION WAS MISSING ---
-// Admin: Manually update pool status
+// --- UNCHANGED ---
 export const adminUpdatePoolStatus = async (req: Request, res: Response) => {
-   try {
+  try {
     const { id } = req.params;
     const { status } = req.body;
 
@@ -455,7 +529,7 @@ export const adminUpdatePoolStatus = async (req: Request, res: Response) => {
         status: status as PoolStatus,
       },
     });
-    
+
     if (status === PoolStatus.SHIPPING) {
       logger.info(`Pool ${id} is now SHIPPING.`);
     } else if (status === PoolStatus.DELIVERED) {

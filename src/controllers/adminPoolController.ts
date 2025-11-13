@@ -6,21 +6,26 @@ import * as Sentry from "@sentry/node";
 import { GlobalSetting, Product, LogisticsRoute, KRARate } from "@prisma/client";
 
 /**
+ * --- MODIFIED (v_phase2): Uses new margin keys ---
  * A helper function to convert the GlobalSetting array into a usable object
  */
-const getSettings = (settings: GlobalSetting[], platformFeeRate?: number) => {
+const getSettings = (
+  settings: GlobalSetting[],
+  overridePlatformMargin?: number
+) => {
   const settingsMap = new Map(settings.map((s) => [s.key, parseFloat(s.value)]));
   return {
     USD_TO_KES_RATE: settingsMap.get("USD_TO_KES_RATE") || 130.0,
-    CONTINGENCY_FEE_RATE: settingsMap.get("CONTINGENCY_FEE_RATE") || 0.02,
-    PLATFORM_FEE_RATE: platformFeeRate || settingsMap.get("PLATFORM_FEE_RATE") || 0.05,
+    // Use new, clearer margin keys
+    RISK_MARGIN: settingsMap.get("RISK_MARGIN") || 0.02,
+    PLATFORM_MARGIN:
+      overridePlatformMargin || settingsMap.get("PLATFORM_MARGIN") || 0.05,
   };
 };
 
 /**
- * --- MODIFIED (v3.0 Engine) ---
+ * --- REWRITTEN (v_phase2): Implements new, simpler profit model ---
  * This is the core engine.
- * Fixes minJoiners calculation and suggestion message.
  */
 async function runPoolCalculation(
   product: Product,
@@ -29,10 +34,10 @@ async function runPoolCalculation(
   globalSettings: GlobalSetting[],
   targetQuantity: number,
   baseCostPerUnit: number,
-  overridePlatformFee?: number
+  overridePlatformMargin?: number
 ) {
   // 1. Get business rules
-  const settings = getSettings(globalSettings, overridePlatformFee);
+  const settings = getSettings(globalSettings, overridePlatformMargin);
 
   // 2. Calculate "Per-Item" C, I, and F
   const costC = baseCostPerUnit;
@@ -45,19 +50,23 @@ async function runPoolCalculation(
   const dominantFraction = Math.max(utilisationCBM, utilisationWeight);
 
   if (dominantFraction > 1.0) {
-    throw new Error(`Target quantity (${targetQuantity}) exceeds container capacity by ${Math.round((dominantFraction - 1) * 100)}%`);
+    throw new Error(
+      `Target quantity (${targetQuantity}) exceeds container capacity by ${Math.round(
+        (dominantFraction - 1) * 100
+      )}%`
+    );
   }
 
   const totalContainerFixedCosts =
-    (logisticsRoute.seaFreightCost +
+    logisticsRoute.seaFreightCost +
     logisticsRoute.originCharges +
     logisticsRoute.portChargesMombasa +
     logisticsRoute.clearingAgentFee +
     logisticsRoute.inlandTransportCost -
-    logisticsRoute.containerDeposit);
-  
-  const poolTotalFixedCost = totalContainerFixedCosts * dominantFraction; // This is F (Fixed Cost)
-  const costF = (poolTotalFixedCost / targetQuantity) || 0;
+    logisticsRoute.containerDeposit;
+
+  const poolTotalFixedCost = totalContainerFixedCosts * dominantFraction; // This is F (Total Fixed Cost)
+  const costF = poolTotalFixedCost / targetQuantity || 0; // This is F (Per-Item Fixed Cost)
 
   // 3. Calculate the Correct CIF Value
   const cifValue = costC + costI + costF;
@@ -70,28 +79,30 @@ async function runPoolCalculation(
   const vat = vatBase * kraRate.vat_rate;
   const totalTaxes = importDuty + idf + rdl + vat;
 
-  // 5. Calculate Final "True Landed Cost"
-  const trueLandedCost = cifValue + totalTaxes;
+  // 5. Calculate Final "True Landed Cost" (This is your TrueTotalCost per item)
+  const trueLandedCost = cifValue + totalTaxes; // This is (CostV + CostF)
 
-  // 6. Apply Contingency & Platform Fee
-  const costWithContingency = trueLandedCost * (1 + settings.CONTINGENCY_FEE_RATE); // V
-  const finalSellingPrice = costWithContingency / (1 - settings.PLATFORM_FEE_RATE); // P
-  
-  // --- Round values for calculation to prevent float errors ---
+  // 6. --- NEW (v_phase2): Apply Margins using new, simpler formula ---
+  const finalSellingPrice =
+    trueLandedCost / (1 - settings.PLATFORM_MARGIN - settings.RISK_MARGIN); // P
+
+  // --- Round values for calculation ---
   const P_rounded = Math.ceil(finalSellingPrice);
-  const V_rounded = parseFloat(costWithContingency.toFixed(2));
-  const F_rounded = parseFloat(poolTotalFixedCost.toFixed(2));
+  const V_Cost_rounded = parseFloat(trueLandedCost.toFixed(2));
+  const F_rounded = parseFloat(poolTotalFixedCost.toFixed(2)); // Total Fixed Cost
 
-  // 7. Calculate minJoiners (Break-Even) using ROUNDED values
+  // 7. --- NEW (v_phase2): Calculate minJoiners (Break-Even) using new formula ---
   let suggestedMinJoiners: number | string;
-  
-  const platformFeeAmount = P_rounded * settings.PLATFORM_FEE_RATE;
-  const profitPerUnit = P_rounded - V_rounded - platformFeeAmount;
-  
-  if (profitPerUnit < 0.01) { 
+
+  // EarningPerUnit is the total margin (profit + risk) baked into the price
+  const earningPerUnit =
+    P_rounded * (settings.PLATFORM_MARGIN + settings.RISK_MARGIN);
+
+  if (earningPerUnit < 0.01) {
     suggestedMinJoiners = "Not Profitable";
   } else {
-    const breakEven = F_rounded / profitPerUnit;
+    // Break-Even = Total Fixed Costs / Total Earning Per Unit
+    const breakEven = F_rounded / earningPerUnit;
     suggestedMinJoiners = Math.ceil(breakEven);
   }
 
@@ -100,11 +111,12 @@ async function runPoolCalculation(
   const benchmarkDifference = product.benchmarkPrice - P_rounded;
 
   let suggestion: string;
-  // --- THIS IS THE FIX ---
   if (isViable) {
     suggestion = `Price (${P_rounded}) is ${benchmarkDifference} KES BELOW benchmark (${product.benchmarkPrice}). This is a viable pool.`;
   } else {
-    suggestion = `Price (${P_rounded}) is ${Math.abs(benchmarkDifference)} KES ABOVE benchmark (${product.benchmarkPrice}). Pool is not viable.`;
+    suggestion = `Price (${P_rounded}) is ${Math.abs(
+      benchmarkDifference
+    )} KES ABOVE benchmark (${product.benchmarkPrice}). Pool is not viable.`;
   }
   // --- END FIX ---
 
@@ -112,29 +124,30 @@ async function runPoolCalculation(
   return {
     baseCostPerUnit: baseCostPerUnit,
     targetQuantity: targetQuantity,
-    platformFeeRate: settings.PLATFORM_FEE_RATE,
+    platformMargin: settings.PLATFORM_MARGIN, // --- (v_phase2) Renamed
+    riskMargin: settings.RISK_MARGIN, // --- (v_phase2) New
     viability: isViable ? "PASS" : "FAIL",
     proposedPricePerUnit: P_rounded,
     suggestedMinJoiners: suggestedMinJoiners,
     benchmarkPrice: product.benchmarkPrice,
     suggestion: suggestion,
     costsForPoolCreation: {
-        totalFixedCosts: F_rounded,
-        totalVariableCostPerUnit: V_rounded,
+      totalFixedCosts: F_rounded,
+      totalVariableCostPerUnit: V_Cost_rounded, // --- (v_phase2) Renamed
     },
     debug: {
       dominantFraction: dominantFraction,
-      profitPerUnit: profitPerUnit,
+      earningPerUnit: earningPerUnit, // --- (v_phase2) Renamed
       cifValue: cifValue,
       totalTaxes: totalTaxes,
       trueLandedCost: trueLandedCost,
-    }
+    },
   };
 }
 
 /**
- * --- UNCHANGED (v2.1 Engine) ---
- * This is the "single run" calculator. It now just calls the helper.
+ * --- MODIFIED (v_phase2): Fetches new GlobalSetting keys ---
+ * This is the "single run" calculator.
  */
 export const calculatePoolPricing = async (req: Request, res: Response) => {
   const {
@@ -146,17 +159,35 @@ export const calculatePoolPricing = async (req: Request, res: Response) => {
   } = req.body;
 
   try {
-    const [product, logisticsRoute, kraRate, globalSettings] = await prisma.$transaction([
-      prisma.product.findUniqueOrThrow({ where: { id: productId } }),
-      prisma.logisticsRoute.findUniqueOrThrow({ where: { id: logisticsRouteId } }),
-      prisma.kRARate.findFirstOrThrow({
-        where: { hsCode: { startsWith: hsCode || (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).hsCode } },
-        orderBy: { effectiveFrom: "desc" },
-      }),
-      prisma.globalSetting.findMany({
-        where: { key: { in: ["CONTINGENCY_FEE_RATE", "PLATFORM_FEE_RATE"] } },
-      }),
-    ]);
+    const [product, logisticsRoute, kraRate, globalSettings] =
+      await prisma.$transaction([
+        prisma.product.findUniqueOrThrow({ where: { id: productId } }),
+        prisma.logisticsRoute.findUniqueOrThrow({
+          where: { id: logisticsRouteId },
+        }),
+        prisma.kRARate.findFirstOrThrow({
+          where: {
+            hsCode: {
+              startsWith:
+                hsCode ||
+                (
+                  await prisma.product.findUniqueOrThrow({
+                    where: { id: productId },
+                  })
+                ).hsCode,
+            },
+          },
+          orderBy: { effectiveFrom: "desc" },
+        }),
+        prisma.globalSetting.findMany({
+          // --- MODIFIED (v_phase2): Fetches new margin keys ---
+          where: {
+            key: {
+              in: ["RISK_MARGIN", "PLATFORM_MARGIN", "USD_TO_KES_RATE"],
+            },
+          },
+        }),
+      ]);
 
     const result = await runPoolCalculation(
       product,
@@ -165,25 +196,28 @@ export const calculatePoolPricing = async (req: Request, res: Response) => {
       globalSettings,
       targetQuantity,
       baseCostPerUnit
+      // No margin override
     );
 
     res.status(200).json({ success: true, data: result });
-
   } catch (error: any) {
     logger.error("Error in calculatePoolPricing:", error);
     Sentry.captureException(error);
-    if (error.name === 'NotFoundError' || error.code === 'P2025') {
-      return res.status(404).json({ success: false, message: "Could not find a required resource (Product, Route, or KRA Rate)." });
+    if (error.name === "NotFoundError" || error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Could not find a required resource (Product, Route, or KRA Rate).",
+      });
     }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-
 /**
- * --- MODIFIED (v3.0 Engine) ---
+ * --- MODIFIED (v_phase2): REMOVED ALL DATABASE LOGGING ---
  * This is the "parallel simulation" endpoint.
- * It now returns the 'pricingRequestId'.
+ * It no longer logs to the database.
  */
 export const runPoolSimulations = async (req: Request, res: Response) => {
   const {
@@ -192,7 +226,7 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
     baseCostPerUnit,
     hsCode,
     targetQuantity,
-    platformFeeRate,
+    platformFeeRate, // This param is now overridePlatformMargin
   } = req.body;
 
   const MAX_SIMULATION_RUNS = 1000;
@@ -200,37 +234,62 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
   const MAX_FAILED_TO_STORE = 5;
 
   try {
-    const [product, logisticsRoute, kraRate, globalSettings] = await prisma.$transaction([
-      prisma.product.findUniqueOrThrow({ where: { id: productId } }),
-      prisma.logisticsRoute.findUniqueOrThrow({ where: { id: logisticsRouteId } }),
-      prisma.kRARate.findFirstOrThrow({
-        where: { hsCode: { startsWith: hsCode || (await prisma.product.findUniqueOrThrow({ where: { id: productId } })).hsCode } },
-        orderBy: { effectiveFrom: "desc" },
-      }),
-      prisma.globalSetting.findMany({
-        where: { key: { in: ["CONTINGENCY_FEE_RATE", "PLATFORM_FEE_RATE"] } },
-      }),
-    ]);
+    const [product, logisticsRoute, kraRate, globalSettings] =
+      await prisma.$transaction([
+        prisma.product.findUniqueOrThrow({ where: { id: productId } }),
+        prisma.logisticsRoute.findUniqueOrThrow({
+          where: { id: logisticsRouteId },
+        }),
+        prisma.kRARate.findFirstOrThrow({
+          where: {
+            hsCode: {
+              startsWith:
+                hsCode ||
+                (
+                  await prisma.product.findUniqueOrThrow({
+                    where: { id: productId },
+                  })
+                ).hsCode,
+            },
+          },
+          orderBy: { effectiveFrom: "desc" },
+        }),
+        prisma.globalSetting.findMany({
+          // --- MODIFIED (v_phase2): Fetches new margin keys ---
+          where: {
+            key: {
+              in: ["RISK_MARGIN", "PLATFORM_MARGIN", "USD_TO_KES_RATE"],
+            },
+          },
+        }),
+      ]);
 
-    const qRange = targetQuantity || [100, 100, 100];
-    const feeRange = platformFeeRate || [getSettings(globalSettings).PLATFORM_FEE_RATE, getSettings(globalSettings).PLATFORM_FEE_RATE, 1];
-    const costRange = Array.isArray(baseCostPerUnit) ? baseCostPerUnit : [baseCostPerUnit, baseCostPerUnit, 1];
+    const qRange = targetQuantity || [100, 100, 1];
+    // --- MODIFIED (v_phase2): Uses new margin keys ---
+    const feeRange = platformFeeRate || [
+      getSettings(globalSettings).PLATFORM_MARGIN,
+      getSettings(globalSettings).PLATFORM_MARGIN,
+      0.01, // Default step of 1%
+    ];
+    const costRange = Array.isArray(baseCostPerUnit)
+      ? baseCostPerUnit
+      : [baseCostPerUnit, baseCostPerUnit, 1];
 
     let topViableResults: any[] = [];
     let closestFailedResults: any[] = [];
     let runCount = 0;
     let errorCount = 0;
     let warning: string | null = null;
-    
-    Loop:
-    for (let cost = costRange[0]; cost <= costRange[1]; cost += costRange[2]) {
+
+    Loop: for (let cost = costRange[0]; cost <= costRange[1]; cost += costRange[2]) {
       for (let q = qRange[0]; q <= qRange[1]; q += qRange[2]) {
+        // Handle floating point precision issues with margins
         const feeStart = Math.round(feeRange[0] * 100);
         const feeEnd = Math.round(feeRange[1] * 100);
-        const feeStep = Math.round(feeRange[2] * 100);
-        
+        const feeStep = Math.round(feeRange[2] * 100) || 1; // Ensure step is at least 1
+
         for (let feeNum = feeStart; feeNum <= feeEnd; feeNum += feeStep) {
-          const fee = feeNum / 100;
+          const fee = feeNum / 100; // The overridePlatformMargin
 
           if (runCount >= MAX_SIMULATION_RUNS) {
             warning = `Simulation limit of ${MAX_SIMULATION_RUNS} runs reached. Results may be partial.`;
@@ -246,17 +305,20 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
               globalSettings,
               q,
               cost,
-              fee
+              fee // Pass the fee as the override
             );
-            
+
             if (result.viability === "PASS") {
               topViableResults.push(result);
-              topViableResults.sort((a, b) => a.proposedPricePerUnit - b.proposedPricePerUnit);
+              topViableResults.sort(
+                (a, b) => a.proposedPricePerUnit - b.proposedPricePerUnit
+              );
               if (topViableResults.length > MAX_VIABLE_TO_STORE) {
                 topViableResults.pop();
               }
             } else {
-              const missDistance = result.proposedPricePerUnit - result.benchmarkPrice;
+              const missDistance =
+                result.proposedPricePerUnit - result.benchmarkPrice;
               (result as any).missDistance = missDistance;
               closestFailedResults.push(result);
               closestFailedResults.sort((a, b) => a.missDistance - b.missDistance);
@@ -280,26 +342,23 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
       closestFailedResults: closestFailedResults,
     };
 
-    const log = await prisma.pricingRequest.create({
-      data: {
-        userId: (req as any).user.id,
-        payload: req.body as any,
-        result: finalResults as any,
-      }
-    });
+    // --- DELETED (v_phase2): Removed the prisma.pricingRequest.create() call ---
+    // The calculator no longer logs to the DB.
 
-    // 5. Return the streamlined results AND the log ID
+    // 5. Return the streamlined results
     res.status(200).json({
       success: true,
-      pricingRequestId: log.id, // <-- THIS IS THE FIX
       data: finalResults,
     });
-
   } catch (error: any) {
     logger.error("Error in runPoolSimulations:", error);
     Sentry.captureException(error);
-    if (error.name === 'NotFoundError' || error.code === 'P2025') {
-       return res.status(404).json({ success: false, message: "Could not find a required resource (Product, Route, or KRA Rate)." });
+    if (error.name === "NotFoundError" || error.code === "P2025") {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Could not find a required resource (Product, Route, or KRA Rate).",
+      });
     }
     res.status(500).json({ success: false, message: error.message });
   }

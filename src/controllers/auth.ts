@@ -9,9 +9,10 @@ import logger from '../utils/logger';
 import * as Sentry from '@sentry/node';
 
 import { generateVerificationToken, generateNumericCode, hashToken } from '../utils/token';
-import mailService from '../services/mailService'; // <-- Fixed default import
+import mailService from '../services/mailService';
 import crypto from 'crypto';
 
+// ... (sendRefreshToken function is unchanged) ...
 const REFRESH_TOKEN_COOKIE_NAME = 'jid';
 
 const sendRefreshToken = (res: Response, token: string) => {
@@ -24,43 +25,40 @@ const sendRefreshToken = (res: Response, token: string) => {
   });
 };
 
-/**
- * Handles user registration AND sends verification email
- */
+
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, email, password } = registerSchema.parse(req).body;
+    // ... (hash password, create user) ...
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const verificationToken = generateVerificationToken();
-
     const user = await prisma.user.create({
       data: { 
         name, 
         email, 
         password_hash: hashedPassword, 
-        //role,
         emailVerificationToken: verificationToken,
-        emailVerified: false, // Explicitly set to false on creation
+        emailVerified: false, 
       },
     });
 
     const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/verify-email?token=${verificationToken}`;
-    await mailService.sendEmail({
+    
+    // --- MODIFIED (v_final): Specify 'from' address ---
+    mailService.sendEmail({
+      from: "Gruppy <noreply@gruppy.store>", // Use noreply
       to: user.email,
       subject: "Welcome to Gruppy! Please verify your email.",
       text: `Thanks for signing up! Please click the link to verify your email: ${verificationUrl} \n\nYour token is: ${verificationToken}`,
     });
+    // --- END MODIFICATION ---
 
-    // ✅ --- START OF FIX (Line 60 area) ---
-    // We must pass the emailVerified status to the token
+    // ... (rest of the function is unchanged) ...
     const accessToken = signAccessToken({ 
       userId: user.id, 
       role: user.role, 
-      emailVerified: user.emailVerified // <-- ADDED THIS
+      emailVerified: user.emailVerified
     });
-    // ✅ --- END OF FIX ---
-
     const refreshToken = signRefreshToken({ userId: user.id });
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -95,7 +93,8 @@ export const register = async (req: Request, res: Response) => {
         },
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    // ... (error handling is unchanged) ...
     if (error instanceof z.ZodError) {
       return res
         .status(400)
@@ -116,9 +115,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * Handles user login.
- */
+// ... (login function is unchanged) ...
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = loginSchema.parse(req).body;
@@ -137,14 +134,11 @@ export const login = async (req: Request, res: Response) => {
         .json({ success: false, error: 'Invalid credentials' });
     }
 
-    // ✅ --- START OF FIX (Line 137 area) ---
-    // We must pass the emailVerified status to the token
     const accessToken = signAccessToken({ 
       userId: user.id, 
       role: user.role,
-      emailVerified: user.emailVerified // <-- ADDED THIS
+      emailVerified: user.emailVerified
     });
-    // ✅ --- END OF FIX ---
 
     const refreshToken = signRefreshToken({ userId: user.id });
     const expiresAt = new Date();
@@ -179,7 +173,7 @@ export const login = async (req: Request, res: Response) => {
         },
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res
         .status(400)
@@ -191,9 +185,7 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * Handles refreshing the access token.
- */
+// ... (refresh function is unchanged) ...
 export const refresh = async (req: Request, res: Response) => {
   const token = req.cookies[REFRESH_TOKEN_COOKIE_NAME];
   if (!token) {
@@ -201,7 +193,6 @@ export const refresh = async (req: Request, res: Response) => {
   }
 
   try {
-    // We get the refresh token from the DB
     const dbToken = await prisma.refreshToken.findUnique({
       where: { token },
       include: { user: { select: { id: true, role: true, emailVerified: true } } },
@@ -213,23 +204,20 @@ export const refresh = async (req: Request, res: Response) => {
         .json({ success: false, error: 'Invalid or expired refresh token' });
     }
 
-    // We issue a new access token *with* the user's verification status
     const newAccessToken = signAccessToken({ 
       userId: dbToken.user.id, 
       role: dbToken.user.role,
       emailVerified: dbToken.user.emailVerified,
     });
     return res.json({ success: true, data: { accessToken: newAccessToken } });
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Refresh token error:', { error });
     Sentry.captureException(error);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 };
 
-/**
- * Handles user logout.
- */
+// ... (logout function is unchanged) ...
 export const logout = (_req: Request, res: Response) => {
   res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
     httpOnly: true,
@@ -240,8 +228,7 @@ export const logout = (_req: Request, res: Response) => {
   return res.json({ success: true, message: 'Logged out' });
 };
 
-
-// --- NEW FUNCTION: Verify Email ---
+// ... (verifyEmail function is unchanged) ...
 export const verifyEmail = async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
@@ -268,14 +255,13 @@ export const verifyEmail = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, message: "Email verified successfully. You can now log in." });
 
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Email verification error:', { error });
     Sentry.captureException(error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// --- NEW FUNCTION: Forgot Password ---
 export const forgotPassword = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
@@ -285,6 +271,10 @@ export const forgotPassword = async (req: Request, res: Response) => {
       const resetCode = generateNumericCode(6);
       const { hashedToken, expiresAt } = hashToken(resetCode);
 
+      await prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id }
+      });
+
       await prisma.passwordResetToken.create({
         data: {
           userId: user.id,
@@ -293,24 +283,26 @@ export const forgotPassword = async (req: Request, res: Response) => {
         }
       });
 
+      // --- MODIFIED (v_final): Specify 'from' address ---
       await mailService.sendEmail({
+        from: "Gruppy Password Reset <passwordreset@gruppy.store>", // Use passwordreset
         to: user.email,
         subject: "Your Gruppy Password Reset Code",
         text: `You requested a password reset. Your 6-digit code is: ${resetCode} \n\nThis code will expire in 1 hour.`,
       });
+      // --- END MODIFICATION ---
     }
 
     return res.status(200).json({ success: true, message: "If an account with that email exists, a password reset code has been sent." });
 
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Forgot password error:', { error });
     Sentry.captureException(error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-
-// --- NEW FUNCTION: Reset Password ---
+// ... (resetPassword function is unchanged) ...
 export const resetPassword = async (req: Request, res: Response) => {
   try {
     const { token, newPassword } = req.body;
@@ -344,7 +336,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, message: "Password reset successful. You can now log in." });
 
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Reset password error:', { error });
     Sentry.captureException(error);
     return res.status(500).json({ success: false, message: 'Internal server error' });

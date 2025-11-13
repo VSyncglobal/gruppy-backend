@@ -8,6 +8,7 @@ import {
   estimateLandedCost,
   getAllSourcingRequests,
   updateSourcingRequest,
+  deleteSourcingRequest, // --- NEW (v_phase6) ---
 } from "../controllers/sourcingController";
 import {
   createSourcingRequestSchema,
@@ -48,9 +49,9 @@ router.post(
  * GET /api/sourcing-requests/admin
  */
 router.get(
-  "/admin", 
-  authenticate, 
-  requireAdmin, 
+  "/admin",
+  authenticate,
+  requireAdmin,
   getAllSourcingRequests
 );
 
@@ -64,6 +65,18 @@ router.put(
   requireAdmin,
   validate(updateSourcingRequestSchema),
   updateSourcingRequest
+);
+
+/**
+ * --- NEW (v_phase6) ---
+ * Lets the admin delete a request.
+ * DELETE /api/sourcing-requests/admin/:id
+ */
+router.delete(
+  "/admin/:id",
+  authenticate,
+  requireAdmin,
+  deleteSourcingRequest
 );
 
 export default router;

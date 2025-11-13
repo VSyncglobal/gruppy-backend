@@ -36,6 +36,7 @@ import poolFinanceRoutes from './routes/poolFinanceRoutes';
 import locationRoutes from "./routes/locationRoutes";
 import deliveryRoutes from "./routes/deliveryRoutes";
 import adminShipmentRoutes from "./routes/adminShipmentRoutes"; // --- NEW (v1.3) ---
+import adminBulkOrderRoutes from "./routes/adminBulkOrderRoutes";
 
 
 
@@ -114,6 +115,7 @@ app.use('/api/admin/finance', poolFinanceRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/admin/shipments", adminShipmentRoutes);
+app.use("/api/admin/bulk-orders", adminBulkOrderRoutes);
 
 
 // Root route

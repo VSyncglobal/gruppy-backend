@@ -2,26 +2,42 @@
 import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import logger from "../utils/logger";
-import * as Sentry from "@sentry/node"; // --- CORRECTED SENTRY IMPORT ---
+import * as Sentry from "@sentry/node";
 import { PoolStatus, ShipmentStatus } from "@prisma/client";
 
 /**
+ * --- CORRECT (v_phase1) ---
  * Admin: Create a new (empty) Shipment
+ * Saves the new tracking and date fields.
  */
 export const createShipment = async (req: Request, res: Response) => {
   try {
-    const { name, logisticsRouteId } = req.body;
+    // 1. Deconstruct all new fields from req.body
+    const {
+      name,
+      logisticsRouteId,
+      trackingNumber,
+      notes,
+      departureDate,
+      arrivalDate,
+    } = req.body;
 
-    // Verify the logistics route exists
+    // 2. Verify the logistics route exists (unchanged)
     const route = await prisma.logisticsRoute.findUniqueOrThrow({
       where: { id: logisticsRouteId },
     });
 
+    // 3. Create the shipment with all new fields
     const shipment = await prisma.shipment.create({
       data: {
         name,
         logisticsRouteId,
         status: ShipmentStatus.PLANNING,
+        // --- ADDED NEW FIELDS ---
+        trackingNumber: trackingNumber || null,
+        notes: notes || null,
+        departureDate: departureDate ? new Date(departureDate) : null,
+        arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
       },
       include: {
         logisticsRoute: true,
@@ -43,6 +59,7 @@ export const createShipment = async (req: Request, res: Response) => {
 
 /**
  * Admin: Get all Shipments
+ * (Unchanged)
  */
 export const getAllShipments = async (req: Request, res: Response) => {
   try {
@@ -69,6 +86,7 @@ export const getAllShipments = async (req: Request, res: Response) => {
 
 /**
  * Admin: Get a single Shipment's details, including its pools
+ * (Unchanged)
  */
 export const getShipmentById = async (req: Request, res: Response) => {
   try {
@@ -101,15 +119,14 @@ export const getShipmentById = async (req: Request, res: Response) => {
 
 /**
  * Admin: Add a Pool to a Shipment
+ * (Unchanged)
  */
 export const addPoolToShipment = async (req: Request, res: Response) => {
   try {
     const { id: shipmentId } = req.params;
     const { poolId } = req.body;
 
-    // Use a transaction to ensure data consistency
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Get all required data
       const [shipment, pool, product] = await Promise.all([
         tx.shipment.findUniqueOrThrow({
           where: { id: shipmentId },
@@ -119,13 +136,17 @@ export const addPoolToShipment = async (req: Request, res: Response) => {
           where: { id: poolId },
         }),
         tx.product.findUniqueOrThrow({
-          where: { id: (await tx.pool.findUniqueOrThrow({where: {id: poolId}})).productId },
+          where: {
+            id: (await tx.pool.findUniqueOrThrow({ where: { id: poolId } }))
+              .productId,
+          },
         }),
       ]);
 
-      // 2. Check business logic
       if (shipment.status !== ShipmentStatus.PLANNING) {
-        throw new Error("Cannot add pools to a shipment that is not in PLANNING status.");
+        throw new Error(
+          "Cannot add pools to a shipment that is not in PLANNING status."
+        );
       }
       if (pool.status !== PoolStatus.CLOSED) {
         throw new Error("Only CLOSED pools can be added to a shipment.");
@@ -134,32 +155,27 @@ export const addPoolToShipment = async (req: Request, res: Response) => {
         throw new Error("This pool is already in this shipment.");
       }
       if (pool.shipmentId) {
-        throw new Error(`This pool is already assigned to another shipment (${pool.shipmentId}).`);
+        throw new Error(
+          `This pool is already assigned to another shipment (${pool.shipmentId}).`
+        );
       }
 
-      // 3. Calculate new totals
       const poolVolume = product.volumeCBM * pool.currentQuantity;
       const poolWeight = product.weightKg * pool.currentQuantity;
       const newTotalCBM = shipment.totalCBM + poolVolume;
       const newTotalKg = shipment.totalKg + poolWeight;
 
-      // 4. Check capacity
       if (newTotalCBM > shipment.logisticsRoute.capacityCBM) {
-        throw new Error(`Adding this pool exceeds the container's volume capacity. 
-          (Current: ${shipment.totalCBM}, 
-          Pool: ${poolVolume}, 
-          New: ${newTotalCBM}, 
-          Capacity: ${shipment.logisticsRoute.capacityCBM})`);
+        throw new Error(
+          `Adding this pool exceeds the container's volume capacity.`
+        );
       }
       if (newTotalKg > shipment.logisticsRoute.capacityKg) {
-        throw new Error(`Adding this pool exceeds the container's weight capacity. 
-          (Current: ${shipment.totalKg}, 
-          Pool: ${poolWeight}, 
-          New: ${newTotalKg}, 
-          Capacity: ${shipment.logisticsRoute.capacityKg})`);
+        throw new Error(
+          `Adding this pool exceeds the container's weight capacity.`
+        );
       }
 
-      // 5. Update the Shipment's totals
       const updatedShipment = await tx.shipment.update({
         where: { id: shipmentId },
         data: {
@@ -168,7 +184,6 @@ export const addPoolToShipment = async (req: Request, res: Response) => {
         },
       });
 
-      // 6. Update the Pool's shipmentId
       await tx.pool.update({
         where: { id: poolId },
         data: {
@@ -194,58 +209,59 @@ export const addPoolToShipment = async (req: Request, res: Response) => {
 
 /**
  * Admin: Remove a Pool from a Shipment
+ * (Unchanged)
  */
 export const removePoolFromShipment = async (req: Request, res: Response) => {
   try {
     const { id: shipmentId, poolId } = req.params;
 
     const result = await prisma.$transaction(async (tx) => {
-        // 1. Get required data
-        const [shipment, pool, product] = await Promise.all([
-            tx.shipment.findUniqueOrThrow({
-              where: { id: shipmentId },
-              include: { logisticsRoute: true },
-            }),
-            tx.pool.findUniqueOrThrow({
-              where: { id: poolId },
-            }),
-            tx.product.findUniqueOrThrow({
-              where: { id: (await tx.pool.findUniqueOrThrow({where: {id: poolId}})).productId },
-            }),
-          ]);
+      const [shipment, pool, product] = await Promise.all([
+        tx.shipment.findUniqueOrThrow({
+          where: { id: shipmentId },
+          include: { logisticsRoute: true },
+        }),
+        tx.pool.findUniqueOrThrow({
+          where: { id: poolId },
+        }),
+        tx.product.findUniqueOrThrow({
+          where: {
+            id: (await tx.pool.findUniqueOrThrow({ where: { id: poolId } }))
+              .productId,
+          },
+        }),
+      ]);
 
-        // 2. Check business logic
-        if (shipment.status !== ShipmentStatus.PLANNING) {
-            throw new Error("Cannot remove pools from a shipment that is not in PLANNING status.");
-        }
-        if (pool.shipmentId !== shipmentId) {
-            throw new Error("This pool is not part of this shipment.");
-        }
+      if (shipment.status !== ShipmentStatus.PLANNING) {
+        throw new Error(
+          "Cannot remove pools from a shipment that is not in PLANNING status."
+        );
+      }
+      if (pool.shipmentId !== shipmentId) {
+        throw new Error("This pool is not part of this shipment.");
+      }
 
-        // 3. Calculate new totals
-        const poolVolume = product.volumeCBM * pool.currentQuantity;
-        const poolWeight = product.weightKg * pool.currentQuantity;
-        const newTotalCBM = shipment.totalCBM - poolVolume;
-        const newTotalKg = shipment.totalKg - poolWeight;
-        
-        // 4. Update the Shipment's totals
-        const updatedShipment = await tx.shipment.update({
-            where: { id: shipmentId },
-            data: {
-                totalCBM: newTotalCBM < 0 ? 0 : newTotalCBM,
-                totalKg: newTotalKg < 0 ? 0 : newTotalKg,
-            },
-        });
+      const poolVolume = product.volumeCBM * pool.currentQuantity;
+      const poolWeight = product.weightKg * pool.currentQuantity;
+      const newTotalCBM = shipment.totalCBM - poolVolume;
+      const newTotalKg = shipment.totalKg - poolWeight;
 
-        // 5. Update the Pool (remove shipmentId)
-        await tx.pool.update({
-            where: { id: poolId },
-            data: {
-                shipmentId: null,
-            },
-        });
+      const updatedShipment = await tx.shipment.update({
+        where: { id: shipmentId },
+        data: {
+          totalCBM: newTotalCBM < 0 ? 0 : newTotalCBM,
+          totalKg: newTotalKg < 0 ? 0 : newTotalKg,
+        },
+      });
 
-        return updatedShipment;
+      await tx.pool.update({
+        where: { id: poolId },
+        data: {
+          shipmentId: null,
+        },
+      });
+
+      return updatedShipment;
     });
 
     res.status(200).json({ success: true, data: result });
@@ -263,61 +279,172 @@ export const removePoolFromShipment = async (req: Request, res: Response) => {
 
 /**
  * Admin: Update a Shipment's status (e.g., PLANNING -> LOCKED -> IN_TRANSIT)
+ * (Unchanged)
  */
 export const updateShipmentStatus = async (req: Request, res: Response) => {
-    try {
-        const { id } = req.params;
-        const { status } = req.body as { status: ShipmentStatus };
+  try {
+    const { id } = req.params;
+    const { status } = req.body as { status: ShipmentStatus };
 
-        const shipment = await prisma.shipment.findUniqueOrThrow({
-            where: { id },
-            include: { _count: { select: { pools: true }} }
-        });
+    const shipment = await prisma.shipment.findUniqueOrThrow({
+      where: { id },
+      include: { _count: { select: { pools: true } } },
+    });
 
-        // Logic for locking a shipment
-        if (status === ShipmentStatus.LOCKED && shipment.status === ShipmentStatus.PLANNING) {
-            if (shipment._count.pools === 0) {
-                throw new Error("Cannot lock an empty shipment. Add pools first.");
-            }
-        }
-        
-        // Logic for setting shipment to IN_TRANSIT
-        // This will also update all associated pools to SHIPPING
-        if (status === ShipmentStatus.IN_TRANSIT && shipment.status === ShipmentStatus.LOCKED) {
-            
-            const [updatedShipment] = await prisma.$transaction([
-                // 1. Update the shipment
-                prisma.shipment.update({
-                    where: { id },
-                    data: { status }
-                }),
-                // 2. Update all associated pools to SHIPPING
-                prisma.pool.updateMany({
-                    where: { shipmentId: id },
-                    data: { status: PoolStatus.SHIPPING }
-                })
-            ]);
-            
-            logger.info(`Shipment ${id} is now IN_TRANSIT. ${shipment._count.pools} pools updated to SHIPPING.`);
-            return res.status(200).json({ success: true, data: updatedShipment });
-        }
-
-        // Handle other simple status changes
-        const updatedShipment = await prisma.shipment.update({
-            where: { id },
-            data: { status }
-        });
-
-        res.status(200).json({ success: true, data: updatedShipment });
-
-    } catch (error: any) {
-        logger.error("Error updating shipment status:", error);
-        Sentry.captureException(error);
-        if (error.code === "P2025") {
-            return res
-              .status(404)
-              .json({ success: false, message: "Shipment not found." });
-          }
-        res.status(400).json({ success: false, message: error.message });
+    if (
+      status === ShipmentStatus.LOCKED &&
+      shipment.status === ShipmentStatus.PLANNING
+    ) {
+      if (shipment._count.pools === 0) {
+        throw new Error("Cannot lock an empty shipment. Add pools first.");
+      }
     }
+
+    if (
+      status === ShipmentStatus.IN_TRANSIT &&
+      shipment.status === ShipmentStatus.LOCKED
+    ) {
+      const [updatedShipment] = await prisma.$transaction([
+        prisma.shipment.update({
+          where: { id },
+          data: { status },
+        }),
+        prisma.pool.updateMany({
+          where: { shipmentId: id },
+          data: { status: PoolStatus.SHIPPING },
+        }),
+      ]);
+
+      logger.info(
+        `Shipment ${id} is now IN_TRANSIT. ${shipment._count.pools} pools updated to SHIPPING.`
+      );
+      return res.status(200).json({ success: true, data: updatedShipment });
+    }
+
+    const updatedShipment = await prisma.shipment.update({
+      where: { id },
+      data: { status },
+    });
+
+    res.status(200).json({ success: true, data: updatedShipment });
+  } catch (error: any) {
+    logger.error("Error updating shipment status:", error);
+    Sentry.captureException(error);
+    if (error.code === "P2025") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Shipment not found." });
+    }
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * --- MODIFIED (v_phase3) ---
+ * Admin: Update a Shipment's details
+ * Now saves all fields from the schema.
+ */
+export const updateShipment = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    // 1. Deconstruct all fields from the body
+    const {
+      name,
+      logisticsRouteId,
+      trackingNumber,
+      notes,
+      departureDate,
+      arrivalDate,
+    } = req.body;
+
+    const shipment = await prisma.shipment.findUniqueOrThrow({
+      where: { id },
+    });
+
+    // 2. Only allow editing if in PLANNING (Unchanged)
+    if (shipment.status !== ShipmentStatus.PLANNING) {
+      return res.status(400).json({
+        success: false,
+        message: "Can only edit shipments that are in PLANNING status.",
+      });
+    }
+
+    // 3. Update the shipment with all new fields
+    const updatedShipment = await prisma.shipment.update({
+      where: { id },
+      data: {
+        name,
+        logisticsRouteId,
+        trackingNumber: trackingNumber || null,
+        notes: notes || null,
+        departureDate: departureDate ? new Date(departureDate) : null,
+        arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
+      },
+    });
+
+    res.status(200).json({ success: true, data: updatedShipment });
+  } catch (error: any) {
+    logger.error("Error updating shipment:", error);
+    Sentry.captureException(error);
+    if (error.code === "P2025") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Shipment or Route not found." });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * --- CORRECT (v_phase3) ---
+ * Admin: Delete a Shipment
+ */
+export const deleteShipment = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Unlink all pools from this shipment in a transaction
+    //    We must do this before deleting the shipment.
+    await prisma.$transaction(async (tx) => {
+      const shipment = await tx.shipment.findUniqueOrThrow({
+        where: { id },
+        include: {
+          _count: {
+            select: { pools: true },
+          },
+        },
+      });
+
+      // 2. Check status (moved inside transaction)
+      if (shipment.status !== ShipmentStatus.PLANNING) {
+        throw new Error(
+          "Cannot delete a shipment that is not in PLANNING status."
+        );
+      }
+      
+      // 3. Unlink all pools
+      if (shipment._count.pools > 0) {
+        await tx.pool.updateMany({
+          where: { shipmentId: id },
+          data: { shipmentId: null },
+        });
+      }
+
+      // 4. Now, safely delete the shipment
+      await tx.shipment.delete({
+        where: { id },
+      });
+    });
+
+    res.status(204).send(); // 204 No Content
+  } catch (error: any) {
+    logger.error("Error deleting shipment:", error);
+    Sentry.captureException(error);
+    if (error.code === "P2025") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Shipment not found." });
+    }
+    res.status(400).json({ success: false, message: error.message });
+  }
 };

@@ -1,39 +1,42 @@
 // src/services/mailService.ts
 import logger from '../utils/logger';
 import nodemailer from 'nodemailer';
+import * as Sentry from "@sentry/node";
+
+type MailTransporter = nodemailer.Transporter;
 
 interface MailOptions {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  from?: string; // --- NEW (v_final): Allow 'from' override
 }
 
-// --- v1.3: Make Mail Service Functional ---
+let transporterInstance: MailTransporter | null = null;
 
-// We will use Nodemailer. By default, it's set to use Ethereal,
-// which is a test-only email service.
-// Replace this with your real SMTP (SendGrid, Mailgun, etc.) credentials.
-const createTransport = async () => {
+const getTransport = async (): Promise<MailTransporter> => {
+  if (transporterInstance) {
+    return transporterInstance;
+  }
+
   if (process.env.NODE_ENV === 'production' && process.env.SMTP_HOST) {
-    // --- PRODUCTION TRANSPORT ---
-    // (e.g., SendGrid, Mailgun)
-    return nodemailer.createTransport({
+    logger.info('Creating production mail transporter...');
+    transporterInstance = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+      secure: process.env.SMTP_SECURE === 'true',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     });
   } else {
-    // --- DEVELOPMENT/TEST TRANSPORT (Ethereal) ---
-    // This creates a *temporary* test inbox.
-    // Credentials will be logged to the console on first email send.
-    logger.warn('SMTP_HOST not found. Using Ethereal test mail service.');
+    logger.warn('SMTP_HOST not found. Creating Ethereal test mail account...');
     let testAccount = await nodemailer.createTestAccount();
-    return nodemailer.createTransport({
+    logger.info(`📧 Ethereal account created: ${testAccount.user}`);
+    
+    transporterInstance = nodemailer.createTransport({
       host: 'smtp.ethereal.email',
       port: 587,
       secure: false,
@@ -43,30 +46,39 @@ const createTransport = async () => {
       },
     });
   }
+
+  return transporterInstance;
 };
 
 const mailService = {
   sendEmail: async (options: MailOptions) => {
     try {
-      const transporter = await createTransport();
+      const transporter = await getTransport();
+      
+      // --- MODIFIED (v_final): Use default MAIL_FROM, but allow override ---
       const mailDefaults = {
-        from: `Gruppy <${process.env.MAIL_FROM || 'noreply@gruppy.com'}>`,
+        from: process.env.MAIL_FROM || 'Gruppy <noreply@gruppy.com>',
       };
 
-      const info = await transporter.sendMail({
+      const mailToSend = {
         ...mailDefaults,
-        ...options,
-      });
+        ...options, // This will override 'from' if options.from is provided
+      };
+
+      const info = await transporter.sendMail(mailToSend);
+      // --- END MODIFICATION ---
 
       logger.info(`Email sent: ${info.messageId}`);
 
-      // If using Ethereal, log the preview URL
       if (process.env.NODE_ENV !== 'production' && !process.env.SMTP_HOST) {
         logger.info(`📧 Ethereal Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error sending email:', error);
-      // We don't throw, as email failure shouldn't block main logic
+      Sentry.captureException(error, { extra: { mailOptions: options } });
+      if (!transporterInstance) {
+        throw new Error(`Failed to create mail transport: ${error.message}`);
+      }
     }
   },
 };

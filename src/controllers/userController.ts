@@ -3,17 +3,12 @@ import { Request, Response } from "express";
 import prisma from "../utils/prismaClient";
 import { PoolStatus } from "@prisma/client";
 import logger from "../utils/logger";
-import * as Sentry from "@sentry/node"; // Correct Sentry import
+import * as Sentry from "@sentry/node";
 import bcrypt from "bcryptjs";
 import { generateVerificationToken } from "../utils/token";
 import mailService from "../services/mailService";
 
-/**
- * --- MODIFIED (v1.3) ---
- * Gets the logged-in user's profile.
- * REMOVED 'address' and 'location'.
- * ADDED 'accountBalance'.
- */
+// ... (getUserProfile function is unchanged) ...
 export const getUserProfile = async (req: Request, res: Response) => {
   const user = (req as any).user;
   const userProfile = await prisma.user.findUnique({
@@ -27,22 +22,17 @@ export const getUserProfile = async (req: Request, res: Response) => {
       phone: true,
       createdAt: true,
       emailVerificationToken: true,
-      accountBalance: true, // --- NEW (v1.3) ---
-      // 'address' and 'location' are removed
+      accountBalance: true, 
     },
   });
   res.json(userProfile);
 };
 
-/**
- * --- MODIFIED (v1.3) ---
- * Updates basic user info (name, phone).
- * Email and address changes are handled by dedicated functions.
- */
+// ... (updateUserProfile function is unchanged) ...
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const { name, phone } = req.body; // Only name and phone
+    const { name, phone } = req.body; 
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -58,7 +48,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
         emailVerified: true,
         phone: true,
         createdAt: true,
-        accountBalance: true, // --- NEW (v1.3) ---
+        accountBalance: true,
       },
     });
 
@@ -75,16 +65,11 @@ export const updateUserProfile = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * --- NEW (v1.3): Handles request to change user's email ---
- * This triggers a re-verification process.
- */
 export const changeEmail = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { email } = req.body;
 
-    // Check if user is trying to change to their current email
     const currentUser = await prisma.user.findUniqueOrThrow({
       where: { id: userId },
     });
@@ -99,21 +84,24 @@ export const changeEmail = async (req: Request, res: Response) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        email: email, // Update the email
-        emailVerified: false, // Mark as unverified
-        emailVerificationToken: verificationToken, // Set new token
+        email: email, 
+        emailVerified: false, 
+        emailVerificationToken: verificationToken,
       },
     });
 
-    // Send verification email to the *new* address
     const verificationUrl = `${
       process.env.FRONTEND_URL || "http://localhost:3001"
     }/verify-email?token=${verificationToken}`;
+    
+    // --- MODIFIED (v_final): Specify 'from' address ---
     await mailService.sendEmail({
+      from: "Gruppy <noreply@gruppy.store>", // Use noreply
       to: updatedUser.email,
       subject: "Please verify your new Gruppy email address",
       text: `You requested to change your email. Please click the link to verify this new email address: ${verificationUrl}`,
     });
+    // --- END MODIFICATION ---
 
     res.status(200).json({
       success: true,
@@ -132,7 +120,7 @@ export const changeEmail = async (req: Request, res: Response) => {
   }
 };
 
-// --- UNCHANGED ---
+// ... (getMyPools function is unchanged) ...
 export const getMyPools = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -160,7 +148,7 @@ export const getMyPools = async (req: Request, res: Response) => {
   }
 };
 
-// --- UNCHANGED ---
+// ... (getUserDashboardStats function is unchanged) ...
 export const getUserDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -186,8 +174,15 @@ export const getUserDashboardStats = async (req: Request, res: Response) => {
     });
 
     const totalSavings = completedMemberships.reduce((acc, pm) => {
+      // --- MODIFIED (v_phase1): Use the correct logic from our new schema
       if (pm.pool.finance && pm.pool.finance.memberSavings) {
-        return acc + pm.pool.finance.memberSavings;
+        // Find how many items this user bought
+        const userQuantity = pm.quantity;
+        // Find total items in the pool
+        const totalQuantity = pm.pool.currentQuantity;
+        // Get the user's share of the *total* pool savings
+        const userShare = (userQuantity / totalQuantity) * pm.pool.finance.memberSavings;
+        return acc + userShare;
       }
       return acc;
     }, 0);
@@ -196,7 +191,7 @@ export const getUserDashboardStats = async (req: Request, res: Response) => {
       success: true,
       data: {
         totalJoinedPools,
-        totalSavings,
+        totalSavings: Math.ceil(totalSavings), // Return rounded savings
       },
     });
   } catch (error: any) {
@@ -206,7 +201,7 @@ export const getUserDashboardStats = async (req: Request, res: Response) => {
   }
 };
 
-// --- UNCHANGED ---
+// ... (changePassword function is unchanged) ...
 export const changePassword = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -241,19 +236,7 @@ export const changePassword = async (req: Request, res: Response) => {
   }
 };
 
-// --- DEPRECATED (v1.3) ---
-export const updatePhone = async (req: Request, res: Response) => {
-  res.status(400).json({
-    success: false,
-    message: "This endpoint is deprecated. Use PUT /api/users/profile instead.",
-  });
-};
-
-// --- NEW (v1.3): Address Management ---
-
-/**
- * --- NEW (v1.3): Get all saved addresses for a user ---
- */
+// ... (getUserAddresses function is unchanged) ...
 export const getUserAddresses = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -269,9 +252,7 @@ export const getUserAddresses = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * --- NEW (v1.3): Create a new saved address for a user ---
- */
+// ... (createAddress function is unchanged) ...
 export const createAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -285,7 +266,6 @@ export const createAddress = async (req: Request, res: Response) => {
       });
     }
 
-    // If setting this as default, unset all others
     if (isDefault) {
       await prisma.userAddress.updateMany({
         where: { userId },
@@ -312,16 +292,13 @@ export const createAddress = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * --- NEW (v1.3): Update a specific saved address ---
- */
+// ... (updateAddress function is unchanged) ...
 export const updateAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { addressId } = req.params;
     const { name, addressLine1, town, county, isDefault } = req.body;
 
-    // If setting this as default, unset all others
     if (isDefault) {
       await prisma.userAddress.updateMany({
         where: { userId, NOT: { id: addressId } },
@@ -332,7 +309,6 @@ export const updateAddress = async (req: Request, res: Response) => {
     const updatedAddress = await prisma.userAddress.update({
       where: { id: addressId },
       data: {
-        // Ensure user can't update another user's address
         user: { connect: { id: userId } },
         name,
         addressLine1,
@@ -355,15 +331,12 @@ export const updateAddress = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * --- NEW (v1.3): Delete a specific saved address ---
- */
+// ... (deleteAddress function is unchanged) ...
 export const deleteAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { addressId } = req.params;
 
-    // Verify the address belongs to the user before deleting
     const address = await prisma.userAddress.findFirstOrThrow({
       where: { id: addressId, userId },
     });
