@@ -46,7 +46,7 @@ export const updatePoolSchema = z.object({
 });
 
 // For admin updating pool status
-export const updatePoolStatusSchema = z.object({
+export const adminUpdatePoolStatusSchema = z.object({
   body: z.object({
     status: z.enum([
       "FILLING",
@@ -77,5 +77,42 @@ export const joinPoolSchema = z.object({
       .max(12, "Phone number must be at most 12 digits")
       .optional(),
     // --- END OF FIX ---
+  }),
+});
+// --- UNCHANGED (v2.1 Engine) ---
+export const calculatePoolPricingSchema = z.object({
+  body: z.object({
+    productId: z.string().cuid("Invalid product ID"),
+    logisticsRouteId: z.string().cuid("Invalid logistics route ID"),
+    targetQuantity: z.coerce.number().int().positive("Target quantity must be a positive integer"),
+    baseCostPerUnit: z.coerce.number().positive("Base cost must be a positive number"),
+    hsCode: z.string().min(4, "HS code is required").optional(),
+  }),
+});
+
+// --- UNCHANGED (v2.1 Engine) ---
+export const runSimulationSchema = z.object({
+  body: z.object({
+    productId: z.string().cuid("Invalid product ID"),
+    logisticsRouteId: z.string().cuid("Invalid logistics route ID"),
+    hsCode: z.string().min(4, "HS code is required").optional(),
+    baseCostPerUnit: z.union([
+        z.coerce.number().positive("Base cost must be a positive number"),
+        z.tuple([
+          z.coerce.number().positive(),
+          z.coerce.number().positive(),
+          z.coerce.number().positive(),
+        ])
+    ]),
+    targetQuantity: z.tuple([
+      z.coerce.number().int().positive(),
+      z.coerce.number().int().positive(),
+      z.coerce.number().int().positive(),
+    ]).optional(),
+    platformFeeRate: z.tuple([
+      z.coerce.number().min(0),
+      z.coerce.number().min(0),
+      z.coerce.number().positive(),
+    ]).optional(),
   }),
 });
