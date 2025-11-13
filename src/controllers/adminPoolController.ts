@@ -5,10 +5,7 @@ import logger from "../utils/logger";
 import * as Sentry from "@sentry/node";
 import { GlobalSetting, Product, LogisticsRoute, KRARate } from "@prisma/client";
 
-/**
- * --- MODIFIED (v_phase2): Uses new margin keys ---
- * A helper function to convert the GlobalSetting array into a usable object
- */
+// --- (Helper functions: getSettings, runPoolCalculation - unchanged from previous correct version) ---
 const getSettings = (
   settings: GlobalSetting[],
   overridePlatformMargin?: number
@@ -16,17 +13,12 @@ const getSettings = (
   const settingsMap = new Map(settings.map((s) => [s.key, parseFloat(s.value)]));
   return {
     USD_TO_KES_RATE: settingsMap.get("USD_TO_KES_RATE") || 130.0,
-    // Use new, clearer margin keys
     RISK_MARGIN: settingsMap.get("RISK_MARGIN") || 0.02,
     PLATFORM_MARGIN:
       overridePlatformMargin || settingsMap.get("PLATFORM_MARGIN") || 0.05,
   };
 };
 
-/**
- * --- REWRITTEN (v_phase2): Implements new, simpler profit model ---
- * This is the core engine.
- */
 async function runPoolCalculation(
   product: Product,
   logisticsRoute: LogisticsRoute,
@@ -36,13 +28,9 @@ async function runPoolCalculation(
   baseCostPerUnit: number,
   overridePlatformMargin?: number
 ) {
-  // 1. Get business rules
   const settings = getSettings(globalSettings, overridePlatformMargin);
-
-  // 2. Calculate "Per-Item" C, I, and F
   const costC = baseCostPerUnit;
   const costI = costC * logisticsRoute.marineInsuranceRate;
-
   const poolTotalVolume = product.volumeCBM * targetQuantity;
   const poolTotalWeight = product.weightKg * targetQuantity;
   const utilisationCBM = poolTotalVolume / logisticsRoute.capacityCBM;
@@ -65,51 +53,34 @@ async function runPoolCalculation(
     logisticsRoute.inlandTransportCost -
     logisticsRoute.containerDeposit;
 
-  const poolTotalFixedCost = totalContainerFixedCosts * dominantFraction; // This is F (Total Fixed Cost)
-  const costF = poolTotalFixedCost / targetQuantity || 0; // This is F (Per-Item Fixed Cost)
-
-  // 3. Calculate the Correct CIF Value
+  const poolTotalFixedCost = totalContainerFixedCosts * dominantFraction;
+  const costF = poolTotalFixedCost / targetQuantity || 0;
   const cifValue = costC + costI + costF;
-
-  // 4. Calculate Taxes (Based on Correct CIF)
   const importDuty = cifValue * kraRate.duty_rate;
   const idf = cifValue * kraRate.idf_rate;
   const rdl = cifValue * kraRate.rdl_rate;
   const vatBase = cifValue + importDuty + idf + rdl;
   const vat = vatBase * kraRate.vat_rate;
   const totalTaxes = importDuty + idf + rdl + vat;
-
-  // 5. Calculate Final "True Landed Cost" (This is your TrueTotalCost per item)
-  const trueLandedCost = cifValue + totalTaxes; // This is (CostV + CostF)
-
-  // 6. --- NEW (v_phase2): Apply Margins using new, simpler formula ---
+  const trueLandedCost = cifValue + totalTaxes;
   const finalSellingPrice =
-    trueLandedCost / (1 - settings.PLATFORM_MARGIN - settings.RISK_MARGIN); // P
-
-  // --- Round values for calculation ---
+    trueLandedCost / (1 - settings.PLATFORM_MARGIN - settings.RISK_MARGIN);
   const P_rounded = Math.ceil(finalSellingPrice);
   const V_Cost_rounded = parseFloat(trueLandedCost.toFixed(2));
-  const F_rounded = parseFloat(poolTotalFixedCost.toFixed(2)); // Total Fixed Cost
-
-  // 7. --- NEW (v_phase2): Calculate minJoiners (Break-Even) using new formula ---
+  const F_rounded = parseFloat(poolTotalFixedCost.toFixed(2));
   let suggestedMinJoiners: number | string;
-
-  // EarningPerUnit is the total margin (profit + risk) baked into the price
   const earningPerUnit =
     P_rounded * (settings.PLATFORM_MARGIN + settings.RISK_MARGIN);
 
   if (earningPerUnit < 0.01) {
     suggestedMinJoiners = "Not Profitable";
   } else {
-    // Break-Even = Total Fixed Costs / Total Earning Per Unit
     const breakEven = F_rounded / earningPerUnit;
     suggestedMinJoiners = Math.ceil(breakEven);
   }
 
-  // 8. Viability Check & Creative Suggestion
   const isViable = P_rounded < product.benchmarkPrice;
   const benchmarkDifference = product.benchmarkPrice - P_rounded;
-
   let suggestion: string;
   if (isViable) {
     suggestion = `Price (${P_rounded}) is ${benchmarkDifference} KES BELOW benchmark (${product.benchmarkPrice}). This is a viable pool.`;
@@ -118,14 +89,12 @@ async function runPoolCalculation(
       benchmarkDifference
     )} KES ABOVE benchmark (${product.benchmarkPrice}). Pool is not viable.`;
   }
-  // --- END FIX ---
 
-  // 9. Return the structured result
   return {
     baseCostPerUnit: baseCostPerUnit,
     targetQuantity: targetQuantity,
-    platformMargin: settings.PLATFORM_MARGIN, // --- (v_phase2) Renamed
-    riskMargin: settings.RISK_MARGIN, // --- (v_phase2) New
+    platformMargin: settings.PLATFORM_MARGIN,
+    riskMargin: settings.RISK_MARGIN,
     viability: isViable ? "PASS" : "FAIL",
     proposedPricePerUnit: P_rounded,
     suggestedMinJoiners: suggestedMinJoiners,
@@ -133,11 +102,11 @@ async function runPoolCalculation(
     suggestion: suggestion,
     costsForPoolCreation: {
       totalFixedCosts: F_rounded,
-      totalVariableCostPerUnit: V_Cost_rounded, // --- (v_phase2) Renamed
+      totalVariableCostPerUnit: V_Cost_rounded,
     },
     debug: {
       dominantFraction: dominantFraction,
-      earningPerUnit: earningPerUnit, // --- (v_phase2) Renamed
+      earningPerUnit: earningPerUnit,
       cifValue: cifValue,
       totalTaxes: totalTaxes,
       trueLandedCost: trueLandedCost,
@@ -145,10 +114,6 @@ async function runPoolCalculation(
   };
 }
 
-/**
- * --- MODIFIED (v_phase2): Fetches new GlobalSetting keys ---
- * This is the "single run" calculator.
- */
 export const calculatePoolPricing = async (req: Request, res: Response) => {
   const {
     productId,
@@ -180,7 +145,6 @@ export const calculatePoolPricing = async (req: Request, res: Response) => {
           orderBy: { effectiveFrom: "desc" },
         }),
         prisma.globalSetting.findMany({
-          // --- MODIFIED (v_phase2): Fetches new margin keys ---
           where: {
             key: {
               in: ["RISK_MARGIN", "PLATFORM_MARGIN", "USD_TO_KES_RATE"],
@@ -196,7 +160,6 @@ export const calculatePoolPricing = async (req: Request, res: Response) => {
       globalSettings,
       targetQuantity,
       baseCostPerUnit
-      // No margin override
     );
 
     res.status(200).json({ success: true, data: result });
@@ -215,9 +178,7 @@ export const calculatePoolPricing = async (req: Request, res: Response) => {
 };
 
 /**
- * --- MODIFIED (v_phase2): REMOVED ALL DATABASE LOGGING ---
- * This is the "parallel simulation" endpoint.
- * It no longer logs to the database.
+ * --- RECTIFIED: This version logs the request and returns the ID ---
  */
 export const runPoolSimulations = async (req: Request, res: Response) => {
   const {
@@ -226,7 +187,7 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
     baseCostPerUnit,
     hsCode,
     targetQuantity,
-    platformMargin // This param is now overridePlatformMargin
+    platformMargin, // --- FIX: Use correct key 'platformMargin' ---
   } = req.body;
 
   const MAX_SIMULATION_RUNS = 1000;
@@ -255,7 +216,6 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
           orderBy: { effectiveFrom: "desc" },
         }),
         prisma.globalSetting.findMany({
-          // --- MODIFIED (v_phase2): Fetches new margin keys ---
           where: {
             key: {
               in: ["RISK_MARGIN", "PLATFORM_MARGIN", "USD_TO_KES_RATE"],
@@ -265,11 +225,10 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
       ]);
 
     const qRange = targetQuantity || [100, 100, 1];
-    // --- MODIFIED (v_phase2): Uses new margin keys ---
-    const feeRange = platformMargin || [
+    const feeRange = platformMargin || [ // --- FIX: Use correct key 'platformMargin' ---
       getSettings(globalSettings).PLATFORM_MARGIN,
       getSettings(globalSettings).PLATFORM_MARGIN,
-      0.01, // Default step of 1%
+      0.01,
     ];
     const costRange = Array.isArray(baseCostPerUnit)
       ? baseCostPerUnit
@@ -281,15 +240,15 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
     let errorCount = 0;
     let warning: string | null = null;
 
+    // --- (Loop logic is unchanged) ---
     Loop: for (let cost = costRange[0]; cost <= costRange[1]; cost += costRange[2]) {
       for (let q = qRange[0]; q <= qRange[1]; q += qRange[2]) {
-        // Handle floating point precision issues with margins
         const feeStart = Math.round(feeRange[0] * 100);
         const feeEnd = Math.round(feeRange[1] * 100);
-        const feeStep = Math.round(feeRange[2] * 100) || 1; // Ensure step is at least 1
+        const feeStep = Math.round(feeRange[2] * 100) || 1;
 
         for (let feeNum = feeStart; feeNum <= feeEnd; feeNum += feeStep) {
-          const fee = feeNum / 100; // The overridePlatformMargin
+          const fee = feeNum / 100;
 
           if (runCount >= MAX_SIMULATION_RUNS) {
             warning = `Simulation limit of ${MAX_SIMULATION_RUNS} runs reached. Results may be partial.`;
@@ -305,7 +264,7 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
               globalSettings,
               q,
               cost,
-              fee // Pass the fee as the override
+              fee
             );
 
             if (result.viability === "PASS") {
@@ -342,12 +301,21 @@ export const runPoolSimulations = async (req: Request, res: Response) => {
       closestFailedResults: closestFailedResults,
     };
 
-    // --- DELETED (v_phase2): Removed the prisma.pricingRequest.create() call ---
-    // The calculator no longer logs to the DB.
+    // --- THIS IS THE CORRECT LOGIC (as per your request) ---
+    // 1. Log the simulation input and output
+    const log = await prisma.pricingRequest.create({
+      data: {
+        userId: (req as any).user.id,
+        payload: req.body as any, // This logs the input
+        result: finalResults as any, // This logs the full output
+      },
+    });
+    // --- END OF CORRECT LOGIC ---
 
-    // 5. Return the streamlined results
+    // 2. Return the results AND the log ID
     res.status(200).json({
       success: true,
+      pricingRequestId: log.id, // <-- Return the ID
       data: finalResults,
     });
   } catch (error: any) {

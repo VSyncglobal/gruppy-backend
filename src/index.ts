@@ -17,8 +17,7 @@ import authRouter from './routes/auth';
 import pricingRoutes from './routes/pricing';
 import categoryRoutes from './routes/categoryRoutes';
 import pricingLogRoutes from './routes/pricingLog';
-// import adminFreightRoutes from './routes/adminFreight'; // --- DELETED ---
-import adminLogisticsRoutes from './routes/adminLogisticsRoutes'; // --- NEW ---
+import adminLogisticsRoutes from './routes/adminLogisticsRoutes'; 
 import adminTaxRoutes from './routes/adminTax';
 import userRoutes from './routes/userRoutes';
 import adminPaymentRoutes from './routes/adminPaymentRoutes';
@@ -35,10 +34,8 @@ import sourcingRoutes from './routes/sourcingRoutes';
 import poolFinanceRoutes from './routes/poolFinanceRoutes';
 import locationRoutes from "./routes/locationRoutes";
 import deliveryRoutes from "./routes/deliveryRoutes";
-import adminShipmentRoutes from "./routes/adminShipmentRoutes"; // --- NEW (v1.3) ---
-import adminBulkOrderRoutes from "./routes/adminBulkOrderRoutes";
-
-
+import adminShipmentRoutes from "./routes/adminShipmentRoutes";
+import adminBulkOrderRoutes from "./routes/adminBulkOrderRoutes"; // --- NEW (v_phase4) ---
 
 // Job Scheduler
 import { startJobs } from './jobs';
@@ -78,8 +75,8 @@ app.use(cookieParser());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 100,
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // Limit each IP to 100 requests per windowMs
 });
 app.use(limiter);
 
@@ -92,15 +89,10 @@ app.use('/health', healthRouter);
 app.use('/api/auth', authRouter); 
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/pricing/logs', pricingLogRoutes);
-// app.use('/api/admin/freight', adminFreightRoutes); // --- DELETED ---
-app.use('/api/admin/logistics-routes', adminLogisticsRoutes); // --- NEW ---
+app.use('/api/admin/logistics-routes', adminLogisticsRoutes); 
 app.use('/api/admin/tax', adminTaxRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
-
-// --- THIS IS THE FIX ---
-app.use('/api/users', userRoutes); // Changed from /api/user
-// --- END OF FIX ---
-
+app.use('/api/users', userRoutes); 
 app.use('/api/pools', poolRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/products', productRoutes);
@@ -115,8 +107,7 @@ app.use('/api/admin/finance', poolFinanceRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/admin/shipments", adminShipmentRoutes);
-app.use("/api/admin/bulk-orders", adminBulkOrderRoutes);
-
+app.use("/api/admin/bulk-orders", adminBulkOrderRoutes); // --- NEW (v_phase4) ---
 
 // Root route
 app.get('/', (req: Request, res: Response) => {
