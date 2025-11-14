@@ -1,34 +1,40 @@
-import logger from "../utils/logger";
-import { Resend } from "resend";
-import * as Sentry from "@sentry/node";
+// src/services/mailService.ts
+import { Resend } from 'resend';
+import logger from '../utils/logger';
+import * as Sentry from '@sentry/node';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY || '');
 
-interface MailOptions {
+export interface MailOptions {
   to: string;
-  subject: string;
-  html: string;
+  template: {
+    id: string; // Resend template name or ID
+    variables?: Record<string, string | number>;
+  };
   from?: string;
 }
 
 const mailService = {
   sendEmail: async (options: MailOptions) => {
     try {
-      const response = await resend.emails.send({
-        from: options.from || process.env.MAIL_FROM || "Gruppy <noreply@gruppy.store>",
+      const fromAddress = options.from || 'Gruppy <noreply@gruppy.store>';
+
+      const { data, error } = await resend.emails.send({
         to: options.to,
-        subject: options.subject,
-        html: options.html,
+        template: options.template,
+        from: fromAddress,
       });
 
-      logger.info(`📧 Resend: Email sent → ${response.data?.id ?? "no-id-returned"}`);
+      if (error) {
+        logger.error('Error sending email via Resend:', error);
+        Sentry.captureException(error, { extra: { mailOptions: options } });
+        return;
+      }
 
-      return response;
-
-    } catch (error: any) {
-      logger.error("❌ Failed to send email via Resend:", error);
-      Sentry.captureException(error, { extra: { mailOptions: options } });
-      throw new Error("Email sending failed: " + error.message);
+      logger.info(`Email sent via Resend: ${data?.id}`);
+    } catch (err: any) {
+      logger.error('MailService unexpected error:', err);
+      Sentry.captureException(err, { extra: { mailOptions: options } });
     }
   },
 };

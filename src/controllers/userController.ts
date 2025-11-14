@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import { generateVerificationToken } from "../utils/token";
 import mailService from "../services/mailService";
 
-// ... (getUserProfile function is unchanged) ...
+// Get user profile
 export const getUserProfile = async (req: Request, res: Response) => {
   const user = (req as any).user;
   const userProfile = await prisma.user.findUnique({
@@ -22,24 +22,21 @@ export const getUserProfile = async (req: Request, res: Response) => {
       phone: true,
       createdAt: true,
       emailVerificationToken: true,
-      accountBalance: true, 
+      accountBalance: true,
     },
   });
   res.json(userProfile);
 };
 
-// ... (updateUserProfile function is unchanged) ...
+// Update user profile
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
-    const { name, phone } = req.body; 
+    const { name, phone } = req.body;
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: {
-        name,
-        phone,
-      },
+      data: { name, phone },
       select: {
         id: true,
         name: true,
@@ -65,6 +62,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
   }
 };
 
+// Example: changeEmail function using Resend templates
 export const changeEmail = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -73,6 +71,7 @@ export const changeEmail = async (req: Request, res: Response) => {
     const currentUser = await prisma.user.findUniqueOrThrow({
       where: { id: userId },
     });
+
     if (currentUser.email === email) {
       return res.status(400).json({
         success: false,
@@ -84,8 +83,8 @@ export const changeEmail = async (req: Request, res: Response) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        email: email, 
-        emailVerified: false, 
+        email,
+        emailVerified: false,
         emailVerificationToken: verificationToken,
       },
     });
@@ -93,15 +92,20 @@ export const changeEmail = async (req: Request, res: Response) => {
     const verificationUrl = `${
       process.env.FRONTEND_URL || "http://localhost:3001"
     }/verify-email?token=${verificationToken}`;
-    
-    // --- MODIFIED (v_final): Specify 'from' address ---
+
+    // --- Send verification email using Resend template ---
     await mailService.sendEmail({
-      from: "Gruppy <noreply@gruppy.store>", // Use noreply
       to: updatedUser.email,
-      subject: "Please verify your new Gruppy email address",
-      text: `You requested to change your email. Please click the link to verify this new email address: ${verificationUrl}`,
+      from: "Gruppy <noreply@gruppy.store>", // optional override
+      template: {
+        id: "verify-email", // Your template ID in Resend
+        variables: {
+          name: updatedUser.name,
+          verificationUrl,
+          code: verificationToken,
+        },
+      },
     });
-    // --- END MODIFICATION ---
 
     res.status(200).json({
       success: true,
@@ -120,7 +124,7 @@ export const changeEmail = async (req: Request, res: Response) => {
   }
 };
 
-// ... (getMyPools function is unchanged) ...
+// Get user's pools
 export const getMyPools = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -134,9 +138,7 @@ export const getMyPools = async (req: Request, res: Response) => {
           },
         },
       },
-      orderBy: {
-        joinedAt: "desc",
-      },
+      orderBy: { joinedAt: "desc" },
     });
 
     const myPools = poolMemberships.map((pm) => pm.pool);
@@ -148,39 +150,25 @@ export const getMyPools = async (req: Request, res: Response) => {
   }
 };
 
-// ... (getUserDashboardStats function is unchanged) ...
+// User dashboard stats
 export const getUserDashboardStats = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
 
-    const totalJoinedPools = await prisma.poolMember.count({
-      where: { userId },
-    });
+    const totalJoinedPools = await prisma.poolMember.count({ where: { userId } });
 
     const completedMemberships = await prisma.poolMember.findMany({
       where: {
         userId,
-        pool: {
-          status: PoolStatus.DELIVERED,
-        },
+        pool: { status: PoolStatus.DELIVERED },
       },
-      include: {
-        pool: {
-          include: {
-            finance: true,
-          },
-        },
-      },
+      include: { pool: { include: { finance: true } } },
     });
 
     const totalSavings = completedMemberships.reduce((acc, pm) => {
-      // --- MODIFIED (v_phase1): Use the correct logic from our new schema
       if (pm.pool.finance && pm.pool.finance.memberSavings) {
-        // Find how many items this user bought
         const userQuantity = pm.quantity;
-        // Find total items in the pool
         const totalQuantity = pm.pool.currentQuantity;
-        // Get the user's share of the *total* pool savings
         const userShare = (userQuantity / totalQuantity) * pm.pool.finance.memberSavings;
         return acc + userShare;
       }
@@ -191,7 +179,7 @@ export const getUserDashboardStats = async (req: Request, res: Response) => {
       success: true,
       data: {
         totalJoinedPools,
-        totalSavings: Math.ceil(totalSavings), // Return rounded savings
+        totalSavings: Math.ceil(totalSavings),
       },
     });
   } catch (error: any) {
@@ -201,7 +189,7 @@ export const getUserDashboardStats = async (req: Request, res: Response) => {
   }
 };
 
-// ... (changePassword function is unchanged) ...
+// Change user password
 export const changePassword = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -212,14 +200,9 @@ export const changePassword = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const isPasswordValid = await bcrypt.compare(
-      currentPassword,
-      user.password_hash
-    );
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
     if (!isPasswordValid) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid current password" });
+      return res.status(401).json({ success: false, message: "Invalid current password" });
     }
 
     const newHashedPassword = await bcrypt.hash(newPassword, 10);
@@ -236,7 +219,7 @@ export const changePassword = async (req: Request, res: Response) => {
   }
 };
 
-// ... (getUserAddresses function is unchanged) ...
+// Get user addresses
 export const getUserAddresses = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -252,7 +235,7 @@ export const getUserAddresses = async (req: Request, res: Response) => {
   }
 };
 
-// ... (createAddress function is unchanged) ...
+// Create new address
 export const createAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -267,21 +250,11 @@ export const createAddress = async (req: Request, res: Response) => {
     }
 
     if (isDefault) {
-      await prisma.userAddress.updateMany({
-        where: { userId },
-        data: { isDefault: false },
-      });
+      await prisma.userAddress.updateMany({ where: { userId }, data: { isDefault: false } });
     }
 
     const newAddress = await prisma.userAddress.create({
-      data: {
-        userId,
-        name,
-        addressLine1,
-        town,
-        county,
-        isDefault: isDefault || false,
-      },
+      data: { userId, name, addressLine1, town, county, isDefault: isDefault || false },
     });
 
     res.status(201).json({ success: true, data: newAddress });
@@ -292,7 +265,7 @@ export const createAddress = async (req: Request, res: Response) => {
   }
 };
 
-// ... (updateAddress function is unchanged) ...
+// Update an address
 export const updateAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
@@ -314,7 +287,7 @@ export const updateAddress = async (req: Request, res: Response) => {
         addressLine1,
         town,
         county,
-        isDefault: isDefault,
+        isDefault,
       },
     });
 
@@ -323,36 +296,27 @@ export const updateAddress = async (req: Request, res: Response) => {
     logger.error("Error updating user address:", error);
     Sentry.captureException(error);
     if (error.code === "P2025") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Address not found or unauthorized" });
+      return res.status(404).json({ success: false, message: "Address not found or unauthorized" });
     }
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// ... (deleteAddress function is unchanged) ...
+// Delete an address
 export const deleteAddress = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user.id;
     const { addressId } = req.params;
 
-    const address = await prisma.userAddress.findFirstOrThrow({
-      where: { id: addressId, userId },
-    });
-
-    await prisma.userAddress.delete({
-      where: { id: address.id },
-    });
+    const address = await prisma.userAddress.findFirstOrThrow({ where: { id: addressId, userId } });
+    await prisma.userAddress.delete({ where: { id: address.id } });
 
     res.status(204).send();
   } catch (error: any) {
     logger.error("Error deleting user address:", error);
     Sentry.captureException(error);
     if (error.code === "P2025") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Address not found or unauthorized" });
+      return res.status(404).json({ success: false, message: "Address not found or unauthorized" });
     }
     res.status(500).json({ success: false, message: error.message });
   }
