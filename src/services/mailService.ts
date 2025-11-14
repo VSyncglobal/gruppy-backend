@@ -1,6 +1,5 @@
-// src/services/mailService.ts
-import logger from '../utils/logger';
-import { Resend } from 'resend';
+import logger from "../utils/logger";
+import { Resend } from "resend";
 import * as Sentry from "@sentry/node";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -15,24 +14,23 @@ interface MailOptions {
 const mailService = {
   sendEmail: async (options: MailOptions) => {
     try {
-      const mailToSend = {
+      const response = await resend.emails.send({
         from: options.from || process.env.MAIL_FROM || "Gruppy <noreply@gruppy.store>",
         to: options.to,
         subject: options.subject,
         html: options.html,
-      };
+      });
 
-      const response = await resend.emails.send(mailToSend);
+      logger.info(`📧 Resend: Email sent → ${response.data?.id ?? "no-id-returned"}`);
 
-      logger.info(`📧 Email sent via Resend: ${response.id || 'OK'}`);
       return response;
 
     } catch (error: any) {
-      logger.error("❌ Email sending failed:", error);
+      logger.error("❌ Failed to send email via Resend:", error);
       Sentry.captureException(error, { extra: { mailOptions: options } });
-      throw new Error("Failed to send email via Resend: " + error.message);
+      throw new Error("Email sending failed: " + error.message);
     }
-  }
+  },
 };
 
 export default mailService;
