@@ -47,7 +47,7 @@ export const register = async (req: Request, res: Response) => {
       to: user.email,
       from: "Gruppy <noreply@gruppy.store>",
       template: {
-        id: "verify-email", // your Resend template ID
+        id: "verification-email", // your Resend template ID
         variables: { name: user.name, verificationUrl, code: verificationToken },
       },
     });
@@ -215,7 +215,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
         to: user.email,
         from: "Gruppy Password Reset <passwordreset@gruppy.store>",
         template: {
-          id: "password-reset", // your Resend template ID
+          id: "password-reset-email", // your Resend template ID
           variables: { name: user.name, code: resetCode },
         },
       });

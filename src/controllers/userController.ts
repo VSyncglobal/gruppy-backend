@@ -98,12 +98,13 @@ export const changeEmail = async (req: Request, res: Response) => {
       to: updatedUser.email,
       from: "Gruppy <noreply@gruppy.store>", // optional override
       template: {
-        id: "verify-email", // Your template ID in Resend
+        id: "verification-email", // Your template ID in Resend
         variables: {
           name: updatedUser.name,
           verificationUrl,
           code: verificationToken,
         },
+    
       },
     });
 
